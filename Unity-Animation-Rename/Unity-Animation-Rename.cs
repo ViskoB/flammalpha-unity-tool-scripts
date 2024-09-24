@@ -14,7 +14,7 @@ public class RenameAnimations
     #region Normal
 
     [MenuItem("Tools/Animation Rename/Clip Names Normal")]
-    private static void RevertAnimationClips()
+    private static void RevertAllAnimationClips()
     {
         // Get GUIDs for all .anim assets
         string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
@@ -31,20 +31,24 @@ public class RenameAnimations
     }
 
     [MenuItem("Assets/Animation Rename/Clip Name Normal")]
-    private static void RevertAnimationClip()
+    private static void RevertAnimationClips()
     {
-        Object clip = Selection.activeObject;
+        AnimationClip[] clips = Selection.GetFiltered<AnimationClip>(SelectionMode.Assets);
 
-        RevertAnimation(clip);
+        foreach (AnimationClip clip in clips)
+        {
+            RevertAnimation(clip);
+        }
     }
 
     [MenuItem("Assets/Animation Rename/Clip Name Normal", true)]
     private static bool ValidateRevertAnimationClip()
     {
-        return Selection.activeObject is AnimationClip;
+        bool isOnlyClips = Selection.objects.All(obj => obj is AnimationClip);
+        return isOnlyClips;
     }
 
-    private static bool RevertAnimation(Object asset)
+    private static bool RevertAnimation(AnimationClip asset)
     {
         if (asset == null)
         {
@@ -71,7 +75,7 @@ public class RenameAnimations
     #region SLASH
 
     [MenuItem("Tools/Animation Rename/Clip Names SLASH")]
-    private static void RenameAnimationClips()
+    private static void RenameAllAnimationClips()
     {
         // Get GUIDs for all .anim assets
         string[] guids = AssetDatabase.FindAssets("t:AnimationClip");
@@ -88,17 +92,21 @@ public class RenameAnimations
     }
 
     [MenuItem("Assets/Animation Rename/Clip Name SLASH")]
-    private static void RenameAnimationClip()
+    private static void RenameAnimationClips()
     {
-        AnimationClip clip = (AnimationClip)Selection.activeObject;
+        AnimationClip[] clips = Selection.GetFiltered<AnimationClip>(SelectionMode.Assets);
 
-        RenameAnimation(clip);
+        foreach (AnimationClip clip in clips)
+        {
+            RenameAnimation(clip);
+        }
     }
 
     [MenuItem("Assets/Animation Rename/Clip Name SLASH", true)]
     private static bool ValidateRenameAnimationClip()
     {
-        return Selection.activeObject is AnimationClip;
+        bool isOnlyClips = Selection.objects.All(obj => obj is AnimationClip);
+        return isOnlyClips;
     }
 
     private static bool RenameAnimation(AnimationClip clip)
