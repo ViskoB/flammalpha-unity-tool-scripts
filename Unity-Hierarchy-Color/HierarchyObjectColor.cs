@@ -69,6 +69,10 @@ public class HierarchyObjectColor
             {
                 backgroundColor = new Color(0.1f, 0.2f, 0.2f); // Cyan
             }
+            else if (obj.GetComponent<VRC.Dynamics.VRCConstraintBase>())
+            {
+                backgroundColor = new Color(0.2f, 0.3f, 0.4f); // Pale Blue
+            }
 
             // Check if Object has specific script attached
             if (obj.GetComponent("VRCFuryComponent"))
