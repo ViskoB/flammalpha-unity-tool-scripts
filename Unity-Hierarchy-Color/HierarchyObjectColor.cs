@@ -31,6 +31,7 @@ public class HierarchyObjectColor
     static readonly TypeConfig[] typeConfigs =
     {
         // new TypeConfig(Type.GetType("VRCFuryComponent"), "F", new Color(0.3f, 0.1f, 0.3f) /* Purple */),
+        new TypeConfig(Type.GetType("VF.Model.VRCFury, VRCFury"), "F", new Color(0.3f, 0.1f, 0.3f) /* Purple */),
         new TypeConfig(typeof(VRC.Dynamics.ContactSender), "S", new Color(0.1f, 0.3f, 0.2f) /* Green */),
         new TypeConfig(typeof(VRC.Dynamics.ContactReceiver), "R", new Color(0.1f, 0.2f, 0.3f) /* Blue */),
         new TypeConfig(typeof(VRC.Dynamics.VRCPhysBoneBase), "B", new Color(0.1f, 0.2f, 0.2f) /* Cyan */),
@@ -103,13 +104,12 @@ public class HierarchyObjectColor
         GUIStyle countStyle = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleRight, fontSize = 11, fontStyle = FontStyle.Bold };
         Vector2 labelSize = EditorStyles.label.CalcSize(new GUIContent(obj.name));
         int textWidth = (int)(selectionRect.width - iconWidth * counts.Length - offset.x);
-        Rect bgRect = new Rect(selectionRect.x, selectionRect.y, textWidth, selectionRect.height);
+        // Rect bgRect = new Rect(selectionRect.x, selectionRect.y, textWidth, selectionRect.height);
+        float countWidth = 0f;
 
-        if (backgroundColor != Color.white)
+        // Draw the count symbols for each type
+        if (counts.Any(c => c > 0))
         {
-
-            EditorGUI.DrawRect(bgRect, backgroundColor);
-            
             // Draw background color for counts
             for (int i = 0; i < typeConfigs.Length; i++)
             {
@@ -117,12 +117,21 @@ public class HierarchyObjectColor
                     continue; // Skip if no components of this type
 
                 string label = $"{typeConfigs[i].symbol} {counts[i]}";
-                Rect countRect = new Rect(selectionRect.x + textWidth + (i * 30), selectionRect.y, 30, selectionRect.height);
+                Rect countRect = new Rect(selectionRect.x + selectionRect.width - countWidth - iconWidth, selectionRect.y, iconWidth, iconHeight);
                 EditorGUI.DrawRect(countRect, typeConfigs[i].color);
                 string tooltip = $"{typeConfigs[i].type.Name} ({counts[i]})";
                 GUIContent content = new GUIContent(label, tooltip);
                 EditorGUI.LabelField(countRect, content, countStyle);
+
+                countWidth += countRect.width;
             }
+        }
+
+        if (backgroundColor != Color.white)
+        {
+            // Draw background color for the object name
+            Rect bgRect = new Rect(selectionRect.x, selectionRect.y, selectionRect.width - countWidth - 10, selectionRect.height);
+            EditorGUI.DrawRect(bgRect, backgroundColor);
 
             // Draw the object name in the hierarchy.
             EditorGUI.LabelField(offsetRect, obj.name, new GUIStyle()
