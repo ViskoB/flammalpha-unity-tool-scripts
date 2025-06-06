@@ -58,6 +58,8 @@ public class HierarchyObjectColor
 
         int[] counts = new int[typeConfigs.Length];
         AccumulateCountsRecursive(obj.transform, counts);
+        int[] countsOnSelf = new int[typeConfigs.Length];
+        AccumulateCountSelf(obj.transform, countsOnSelf);
 
         // Check if Object has a specific component
         if (obj.GetComponent<Camera>())
@@ -99,28 +101,30 @@ public class HierarchyObjectColor
 
         // Draw the object name in the hierarchy.
         Rect offsetRect = new Rect(selectionRect.position + offset, selectionRect.size);
-        float iconWidth = 24f;
         float iconHeight = selectionRect.height - 2;
-        GUIStyle countStyle = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.MiddleRight, fontSize = 11, fontStyle = FontStyle.Bold };
+        GUIStyle countStyle = new GUIStyle(EditorStyles.label) {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 11,
+            fontStyle = FontStyle.Bold
+        };
         Vector2 labelSize = EditorStyles.label.CalcSize(new GUIContent(obj.name));
-        int textWidth = (int)(selectionRect.width - iconWidth * counts.Length - offset.x);
-        // Rect bgRect = new Rect(selectionRect.x, selectionRect.y, textWidth, selectionRect.height);
         float countWidth = 0f;
 
-        // Draw the count symbols for each type
+        // Draw the count for each type
         if (counts.Any(c => c > 0))
         {
-            // Draw background color for counts
             for (int i = 0; i < typeConfigs.Length; i++)
             {
                 if (counts[i] == 0)
-                    continue; // Skip if no components of this type
+                    continue;
 
-                string label = $"{typeConfigs[i].symbol} {counts[i]}";
-                Rect countRect = new Rect(selectionRect.x + selectionRect.width - countWidth - iconWidth, selectionRect.y, iconWidth, iconHeight);
+                string totalCount = counts[i] == countsOnSelf[i] ? "" : $"{counts[i]}";
+                string selfCount = countsOnSelf[i] > 0 ? $" ({countsOnSelf[i]})" : "";
+                string label = $"{typeConfigs[i].symbol} {totalCount}{selfCount}";
+                float labelWidth = MathF.Max(EditorStyles.label.CalcSize(new GUIContent(label)).x + 2, 30);
+                Rect countRect = new Rect(selectionRect.x + selectionRect.width - countWidth - labelWidth, selectionRect.y, labelWidth, iconHeight);
                 EditorGUI.DrawRect(countRect, typeConfigs[i].color);
-                string tooltip = $"{typeConfigs[i].type.Name} ({counts[i]})";
-                GUIContent content = new GUIContent(label, tooltip);
+                GUIContent content = new GUIContent(label, typeConfigs[i].type.Name);
                 EditorGUI.LabelField(countRect, content, countStyle);
 
                 countWidth += countRect.width;
@@ -146,7 +150,16 @@ public class HierarchyObjectColor
         }
     }
 
-    const int MaxDepth = 10; // Limit to prevent stack overflow in case of circular references
+    const int MaxDepth = 100; // Limit to prevent stack overflow in case of circular references
+
+    static void AccumulateCountSelf(Transform obj, int[] counts)
+    {
+        for (int i = 0; i < typeConfigs.Length; i++)
+        {
+            var components = obj.GetComponents(typeConfigs[i].type);
+            counts[i] += components != null ? components.Length : 0;
+        }
+    }
 
     static void AccumulateCountsRecursive(Transform obj, int[] counts, int depth = 0)
     {
@@ -156,14 +169,7 @@ public class HierarchyObjectColor
             return; // Prevent stack overflow
         }
         // Count on this GameObject
-        for (int i = 0; i < typeConfigs.Length; i++)
-        {
-            var count = obj.GetComponents(typeConfigs[i].type);
-            if (count != null && count.Length > 0)
-            {
-                counts[i] += count.Length;
-            }
-        }
+        AccumulateCountSelf(obj, counts);
 
         // Recursively count children
         for (int c = 0; c < obj.childCount; ++c)
