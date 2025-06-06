@@ -30,11 +30,11 @@ public class HierarchyObjectColor
     // List the component types, symbols and colors you want to display
     static readonly TypeConfig[] typeConfigs =
     {
-        // new TypeConfig(Type.GetType("VRCFuryComponent"), "F", new Color(0.3f, 0.1f, 0.3f) /* Purple */),
-        new TypeConfig(Type.GetType("VF.Model.VRCFury, VRCFury"), "F", new Color(0.3f, 0.1f, 0.3f) /* Purple */),
-        new TypeConfig(typeof(VRC.Dynamics.ContactSender), "S", new Color(0.1f, 0.3f, 0.2f) /* Green */),
-        new TypeConfig(typeof(VRC.Dynamics.ContactReceiver), "R", new Color(0.1f, 0.2f, 0.3f) /* Blue */),
-        new TypeConfig(typeof(VRC.Dynamics.VRCPhysBoneBase), "B", new Color(0.1f, 0.2f, 0.2f) /* Cyan */),
+        new TypeConfig(Type.GetType("VF.Model.VRCFury, VRCFury"), "VF", new Color(0.3f, 0.1f, 0.3f) /* Purple */),
+        new TypeConfig(typeof(VRC.Dynamics.ContactSender), "#S", new Color(0.1f, 0.3f, 0.2f) /* Green */),
+        new TypeConfig(typeof(VRC.Dynamics.ContactReceiver), "#R", new Color(0.1f, 0.2f, 0.3f) /* Blue */),
+        new TypeConfig(typeof(VRC.Dynamics.VRCPhysBoneBase), "◊B", new Color(0.1f, 0.2f, 0.2f) /* Cyan */),
+        new TypeConfig(typeof(VRC.Dynamics.VRCPhysBoneColliderBase), "◊C", new Color(0.2f, 0.2f, 0.1f) /* Yellow */),
         new TypeConfig(typeof(VRC.Dynamics.VRCConstraintBase), "C", new Color(0.2f, 0.3f, 0.4f) /* Pale Blue */),
     };
 
