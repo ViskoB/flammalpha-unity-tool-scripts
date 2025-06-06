@@ -26,7 +26,7 @@ public class ComponentLister
             Component[] components = ((GameObject)Selection.activeObject).GetComponents<Component>();
 
             foreach(Component component in components) {
-                Debug.Log(component.GetType().AssemblyQualifiedName);
+                Debug.Log(component.GetType().AssemblyQualifiedName + " /// " + component.GetType().FullName);
             }
 
             Debug.Log("All components have been listed!");
