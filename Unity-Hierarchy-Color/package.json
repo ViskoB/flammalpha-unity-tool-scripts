@@ -1,0 +1,15 @@
+{
+  "name": "unity-hierarchy-color",
+  "displayName": "Unity Hierarchy Color",
+  "version": "0.1",
+  "description": "Hierarchy View Extension to color GameObjects containint specific Components.",
+  "unity": "2022.3.6f1",
+  "author": {
+    "name": "FlammAlpha"
+  },
+  "legacyFolders": {
+  },
+  "legacyFiles": {
+  },
+  "hideInEditor": false
+}
