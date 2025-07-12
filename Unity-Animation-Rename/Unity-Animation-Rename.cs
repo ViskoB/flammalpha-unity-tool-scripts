@@ -13,7 +13,7 @@ public class RenameAnimations
 {
     #region Normal
 
-    [MenuItem("Tools/Animation Rename/Clip Names Normal")]
+    [MenuItem("Tools/FlammAlpha/Animation Rename/Clip Names Normal")]
     private static void RevertAllAnimationClips()
     {
         // Get GUIDs for all .anim assets
@@ -74,7 +74,7 @@ public class RenameAnimations
 
     #region SLASH
 
-    [MenuItem("Tools/Animation Rename/Clip Names SLASH")]
+    [MenuItem("Tools/FlammAlpha/Animation Rename/Clip Names SLASH")]
     private static void RenameAllAnimationClips()
     {
         // Get GUIDs for all .anim assets
@@ -136,7 +136,7 @@ public class RenameAnimations
 
     #region NOSPACE
 
-    [MenuItem("Tools/Animation Rename/File Names NOSPACE")]
+    [MenuItem("Tools/FlammAlpha/Animation Rename/File Names NOSPACE")]
     private static void RenameAnimationFiles()
     {
         // Get GUIDs for all .anim assets
