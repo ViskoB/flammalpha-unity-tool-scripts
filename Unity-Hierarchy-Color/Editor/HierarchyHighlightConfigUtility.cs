@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace UnityHierarchyColor
 {
@@ -31,6 +32,34 @@ namespace UnityHierarchyColor
             }
         }
 
+        /// <summary>
+        /// Gets the config asset, creating it if necessary.
+        /// </summary>
+        public static HierarchyHighlightConfig GetOrCreateConfig()
+        {
+            var config = AssetDatabase.LoadAssetAtPath<HierarchyHighlightConfig>(ConfigAssetPath);
+            if (config == null)
+            {
+                config = CreateDefaultConfigAsset();
+                AssetDatabase.CreateAsset(config, ConfigAssetPath);
+                AssetDatabase.SaveAssets();
+                OnConfigUpdate?.Invoke(config);
+            }
+            return config;
+        }
+
+        /// <summary>
+        /// Gets the config asset if it exists, otherwise null. Will not create a new one.
+        /// </summary>
+        public static HierarchyHighlightConfig GetConfigIfExists()
+        {
+            return AssetDatabase.LoadAssetAtPath<HierarchyHighlightConfig>(ConfigAssetPath);
+        }
+
+        /// <summary>
+        /// Forces a reload of the config asset and fires the OnConfigUpdate event.
+        /// Throws InvalidDataException if the config does not exist.
+        /// </summary>
         public static void ForceLoadConfig()
         {
             ScriptableObject.CreateInstance<HierarchyHighlightConfig>();
@@ -42,6 +71,9 @@ namespace UnityHierarchyColor
             OnConfigUpdate?.Invoke(config);
         }
 
+        /// <summary>
+        /// Saves changes made to the given config asset and triggers OnConfigUpdate.
+        /// </summary>
         public static void SaveConfig(HierarchyHighlightConfig config)
         {
             EditorUtility.SetDirty(config);
@@ -52,12 +84,18 @@ namespace UnityHierarchyColor
             }
         }
 
+        /// <summary>
+        /// Checks if the config asset exists at the predefined path.
+        /// </summary>
         public static bool ConfigAssetExists()
         {
             bool exists = File.Exists(ConfigAssetPath);
             return exists;
         }
 
+        /// <summary>
+        /// Creates a new default HierarchyHighlightConfig asset instance with default entries.
+        /// </summary>
         private static HierarchyHighlightConfig CreateDefaultConfigAsset()
         {
             Debug.Log("CreateDefaultConfigAsset: Creating a new HierarchyHighlightConfig asset.");
@@ -127,6 +165,41 @@ namespace UnityHierarchyColor
                 }
             };
             return newConfig;
+        }
+
+        /// <summary>
+        /// Adds or updates a type config entry. Returns true if an entry was added/updated.
+        /// </summary>
+        public static bool AddOrUpdateTypeConfigEntry(
+            string typeName,
+            string symbol,
+            Color color,
+            bool propagateUpwards = false)
+        {
+            var config = GetOrCreateConfig();
+
+            var entry = config.typeConfigs.FirstOrDefault(e => e.typeName == typeName);
+            if (entry != null)
+            {
+                bool changed = false;
+                if (entry.symbol != symbol) { entry.symbol = symbol; changed = true; }
+                if (entry.color != color) { entry.color = color; changed = true; }
+                if (entry.propagateUpwards != propagateUpwards) { entry.propagateUpwards = propagateUpwards; changed = true; }
+                if (changed) SaveConfig(config);
+                return changed;
+            }
+            else
+            {
+                config.typeConfigs.Add(new TypeConfigEntry
+                {
+                    typeName = typeName,
+                    symbol = symbol,
+                    color = color,
+                    propagateUpwards = propagateUpwards
+                });
+                SaveConfig(config);
+                return true;
+            }
         }
     }
 }
