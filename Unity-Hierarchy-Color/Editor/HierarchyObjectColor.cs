@@ -18,16 +18,45 @@ namespace UnityHierarchyColor
 
         // Store the current config reference
         private static HierarchyHighlightConfig currentConfig;
+
+        private static Dictionary<string, Type> typeCache = new Dictionary<string, Type>();
+
+        private static Dictionary<int, int[]> cachedCounts = new();
+        private static Dictionary<int, int[]> cachedCountsOnSelf = new();
+        private static int lastRepaintFrame = -1;
+        private static int customFrameCounter = 1;
+
         static HierarchyObjectColor()
         {
             HierarchyHighlightConfigUtility.OnConfigUpdate += OnConfigUpdate;
-            
             EditorApplication.hierarchyWindowItemOnGUI += HandleHierarchyWindowItemOnGUI;
+            HierarchyHighlightConfigUtility.ForceLoadConfig();
         }
 
         private static void OnConfigUpdate(HierarchyHighlightConfig config)
         {
             currentConfig = config;
+
+            // Pre-cache all types for symbols so we don't call Type.GetType at runtime
+            typeCache.Clear();
+            if (currentConfig?.typeConfigs != null)
+            {
+                foreach (var tce in currentConfig.typeConfigs)
+                {
+                    if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
+                    if (!typeCache.ContainsKey(tce.typeName))
+                    {
+                        typeCache[tce.typeName] = Type.GetType(tce.typeName);
+                    }
+                }
+            }
+        }
+
+        private static Type GetCachedType(string typeName)
+        {
+            if (typeCache.TryGetValue(typeName, out var cachedType))
+                return cachedType;
+            return null;
         }
 
         private static List<TypeConfigEntry> GetTypeConfigs()
@@ -52,14 +81,37 @@ namespace UnityHierarchyColor
             GameObject obj = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
             if (obj == null) return;
 
+            if (Event.current.type == EventType.Repaint)
+            {
+                // Time.frameCount may be 0 in some Editor contexts, use a custom counter if needed
+                int frame = Application.isPlaying ? Time.frameCount : ++customFrameCounter;
+                if (frame != lastRepaintFrame)
+                {
+                    cachedCounts.Clear();
+                    cachedCountsOnSelf.Clear();
+                    lastRepaintFrame = frame;
+                }
+            }
+
             Color textColor = Color.white;
             Color disabledTextColor = new Color(0.4f, 0.4f, 0.4f);
             Texture texture = !obj.activeSelf ? AssetPreview.GetMiniThumbnail(obj) : null;
-            int[] counts = new int[typeConfigs.Count];
-            AccumulateCountsRecursive(obj.transform, counts);
 
-            int[] countsOnSelf = new int[typeConfigs.Count];
-            AccumulateCountSelf(obj.transform, countsOnSelf);
+            int[] counts;
+            if (!cachedCounts.TryGetValue(instanceID, out counts))
+            {
+                counts = new int[typeConfigs.Count];
+                AccumulateCountsRecursive(obj.transform, counts);
+                cachedCounts[instanceID] = counts;
+            }
+
+            int[] countsOnSelf;
+            if (!cachedCountsOnSelf.TryGetValue(instanceID, out countsOnSelf))
+            {
+                countsOnSelf = new int[typeConfigs.Count];
+                AccumulateCountSelf(obj.transform, countsOnSelf);
+                cachedCountsOnSelf[instanceID] = countsOnSelf;
+            }
 
             float nextX = selectionRect.xMax;
 
@@ -99,7 +151,7 @@ namespace UnityHierarchyColor
                     var tce = typeConfigs[i];
                     if (tce == null || string.IsNullOrEmpty(tce.typeName))
                         continue;
-                    Type type = Type.GetType(tce.typeName);
+                    Type type = GetCachedType(tce.typeName);
                     if (type == null)
                         continue;
 
@@ -217,7 +269,7 @@ namespace UnityHierarchyColor
             {
                 if (typeConfigs[i] == null || string.IsNullOrEmpty(typeConfigs[i].typeName))
                     continue;
-                Type t = Type.GetType(typeConfigs[i].typeName);
+                Type t = GetCachedType(typeConfigs[i].typeName);
                 if (t != null)
                 {
                     counts[i] += obj.GetComponents(t).Length;
