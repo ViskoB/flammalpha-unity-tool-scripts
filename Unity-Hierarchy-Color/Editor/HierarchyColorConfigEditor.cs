@@ -18,7 +18,7 @@ namespace UnityHierarchyColor
         [NonSerialized] private ReorderableList typeConfigList;
         [NonSerialized] private ReorderableList nameHighlightList;
 
-        [MenuItem("Tools/FlammAlpha/Hierarchy Highlight Config")]
+        [MenuItem("Tools/FlammAlpha/Hierarchy Color/Config")]
         protected static void OpenWindow()
         {
             GetWindow<HierarchyHighlightConfigEditor>("Hierarchy Highlight Config");

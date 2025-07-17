@@ -1,37 +1,53 @@
 /*************************************************************************************
 * FlammAlpha 2024
-* Colors the Hierarchy-View in Unity
+* Colors the Hierarchy-View in Unity (Async Rewrite)
 *************************************************************************************/
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using UnityEditor;
 using UnityEngine;
+using System.Collections.Concurrent;
 
 namespace UnityHierarchyColor
 {
-    /// <summary> Sets a background color for game objects in the Hierarchy tab</summary>
+    /// <summary> Sets a background color for game objects in the Hierarchy tab (asynchronously batches heavy computation)</summary>
     [InitializeOnLoad]
     public class HierarchyObjectColor
     {
-        const int MaxDepth = 100;
-
-        // Store the current config reference
-        private static HierarchyHighlightConfig currentConfig;
-
-        private static Dictionary<string, Type> typeCache = new Dictionary<string, Type>();
-
-        private static Dictionary<int, int[]> cachedCounts = new();
-        private static Dictionary<int, int[]> cachedCountsOnSelf = new();
-        private static int lastRepaintFrame = -1;
-        private static int customFrameCounter = 1;
-
         static HierarchyObjectColor()
         {
             HierarchyHighlightConfigUtility.OnConfigUpdate += OnConfigUpdate;
             EditorApplication.hierarchyWindowItemOnGUI += HandleHierarchyWindowItemOnGUI;
+            EditorApplication.update += EditorUpdate;
             HierarchyHighlightConfigUtility.ForceLoadConfig();
         }
+
+        const int MaxDepth = 100;
+        private static HierarchyHighlightConfig currentConfig;
+        private static Dictionary<string, Type> typeCache = new();
+
+        // Caches
+        private static ConcurrentDictionary<int, int[]> cachedCounts = new();
+        private static ConcurrentDictionary<int, int[]> cachedCountsOnSelf = new();
+
+        // Queue for unprocessed instanceIDs
+        private static ConcurrentQueue<GameObject> countsQueue = new();
+        private static ConcurrentQueue<GameObject> countsSelfQueue = new();
+
+        // Keeps track of what's already requested (so we don't re-queue unnecessarily)
+        private static HashSet<int> pendingCount = new();
+        private static HashSet<int> pendingCountSelf = new();
+
+        private static int lastRepaintFrame = -1;
+        private static int customFrameCounter = 1;
+
+        // Loading spinner symbols, for fun
+        private static readonly string[] spinner = new string[] { "|", "/", "-", "\\" };
+
+        // Event raised when a cache entry finishes updating
+        public static event Action<int> OnCountsCacheUpdated;
 
         private static void OnConfigUpdate(HierarchyHighlightConfig config)
         {
@@ -50,7 +66,36 @@ namespace UnityHierarchyColor
                     }
                 }
             }
+
+            // Clear all caches and queues when config changes
+            cachedCounts.Clear();
+            cachedCountsOnSelf.Clear();
+            pendingCount.Clear();
+            pendingCountSelf.Clear();
+            ClearQueuesAndPending();
         }
+
+#if UNITY_EDITOR
+        [MenuItem("Tools/FlammAlpha/Hierarchy Color/Force Recache")]
+        private static void ForceRecacheMenuItem()
+        {
+            ForceRecache();
+        }
+#endif
+
+        /// <summary>
+        /// Call to clear all type/name caches and their queues, then repaints entire Hierarchy.
+        /// </summary>
+        public static void ForceRecache()
+        {
+            cachedCounts.Clear();
+            cachedCountsOnSelf.Clear();
+            pendingCount.Clear();
+            pendingCountSelf.Clear();
+            ClearQueuesAndPending();
+            EditorApplication.RepaintHierarchyWindow();
+        }
+
 
         private static Type GetCachedType(string typeName)
         {
@@ -81,43 +126,23 @@ namespace UnityHierarchyColor
             GameObject obj = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
             if (obj == null) return;
 
-            if (Event.current.type == EventType.Repaint)
-            {
-                // Time.frameCount may be 0 in some Editor contexts, use a custom counter if needed
-                int frame = Application.isPlaying ? Time.frameCount : ++customFrameCounter;
-                if (frame != lastRepaintFrame)
-                {
-                    cachedCounts.Clear();
-                    cachedCountsOnSelf.Clear();
-                    lastRepaintFrame = frame;
-                }
-            }
+            // REMOVED THE PREVIOUS FRAME/REPAINT-BASED CACHE CLEAR BLOCK
+            int[] counts = null;
+            int[] countsOnSelf = null;
+            bool countsReady = cachedCounts.TryGetValue(instanceID, out counts);
+            bool countsSelfReady = cachedCountsOnSelf.TryGetValue(instanceID, out countsOnSelf);
 
-            Color textColor = Color.white;
-            Color disabledTextColor = new Color(0.4f, 0.4f, 0.4f);
-            Texture texture = !obj.activeSelf ? AssetPreview.GetMiniThumbnail(obj) : null;
-
-            int[] counts;
-            if (!cachedCounts.TryGetValue(instanceID, out counts))
-            {
-                counts = new int[typeConfigs.Count];
-                AccumulateCountsRecursive(obj.transform, counts);
-                cachedCounts[instanceID] = counts;
-            }
-
-            int[] countsOnSelf;
-            if (!cachedCountsOnSelf.TryGetValue(instanceID, out countsOnSelf))
-            {
-                countsOnSelf = new int[typeConfigs.Count];
-                AccumulateCountSelf(obj.transform, countsOnSelf);
-                cachedCountsOnSelf[instanceID] = countsOnSelf;
-            }
+            if (!countsReady && lockset(pendingCount, instanceID))
+                countsQueue.Enqueue(obj);
+            if (!countsSelfReady && lockset(pendingCountSelf, instanceID))
+                countsSelfQueue.Enqueue(obj);
 
             float nextX = selectionRect.xMax;
 
             Color nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
+            Color textColor = Color.white;
+            Color disabledTextColor = new Color(0.4f, 0.4f, 0.4f);
 
-            // === Prefix Match First ===
             bool prefixHighlightFound = false;
             if (nameHighlightConfigs != null && nameHighlightConfigs.Count > 0)
             {
@@ -143,8 +168,7 @@ namespace UnityHierarchyColor
                 }
             }
 
-            // === Component matching only if no prefix match ===
-            if (!prefixHighlightFound)
+            if (!prefixHighlightFound && typeConfigs != null)
             {
                 for (int i = 0; i < typeConfigs.Count; i++)
                 {
@@ -168,7 +192,7 @@ namespace UnityHierarchyColor
                     if (match)
                     {
                         nameBackground = tce.color;
-                        break; // Use the first matching rule for color
+                        break;
                     }
                 }
             }
@@ -186,24 +210,44 @@ namespace UnityHierarchyColor
                 normal = { textColor = Color.white }
             };
 
-            for (int i = typeConfigs.Count - 1; i >= 0; i--)
+            if (countsReady && countsSelfReady)
             {
-                if (counts[i] == 0 && countsOnSelf[i] == 0)
-                    continue;
+                for (int i = typeConfigs.Count - 1; i >= 0; i--)
+                {
+                    if ((counts[i] == 0 && countsOnSelf[i] == 0)
+                        || string.IsNullOrWhiteSpace(typeConfigs[i].symbol))
+                        continue;
 
-                if (string.IsNullOrWhiteSpace(typeConfigs[i].symbol))
-                    continue;
+                    string totalCount = counts[i] == countsOnSelf[i] ? "" : $"{counts[i]}";
+                    string selfCount = countsOnSelf[i] > 0 ? $" ({countsOnSelf[i]})" : "";
+                    string label = $"{typeConfigs[i].symbol} {totalCount}{selfCount}".Trim();
+                    float labelWidth = Mathf.Max(EditorStyles.label.CalcSize(new GUIContent(label)).x + 6, 32);
 
-                string totalCount = counts[i] == countsOnSelf[i] ? "" : $"{counts[i]}";
-                string selfCount = countsOnSelf[i] > 0 ? $" ({countsOnSelf[i]})" : "";
-                string label = $"{typeConfigs[i].symbol} {totalCount}{selfCount}".Trim();
-                float labelWidth = Mathf.Max(EditorStyles.label.CalcSize(new GUIContent(label)).x + 6, 32);
+                    nextX -= labelWidth + 2f;
+                    Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
 
-                nextX -= labelWidth + 2f;
-                Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
+                    EditorGUI.DrawRect(countRect, typeConfigs[i].color);
+                    EditorGUI.LabelField(countRect, new GUIContent(label, typeConfigs[i].typeName), countStyle);
+                }
+            }
+            else
+            {
+                float spinnerW = 20;
+                float padX = 2;
+                nextX -= spinnerW + padX;
+                Rect loadingRect = new Rect(nextX, selectionRect.y, spinnerW, selectionRect.height);
 
-                EditorGUI.DrawRect(countRect, typeConfigs[i].color);
-                EditorGUI.LabelField(countRect, new GUIContent(label, typeConfigs[i].typeName), countStyle);
+                int tick = (int)(EditorApplication.timeSinceStartup * 8) % spinner.Length;
+                string anim = spinner[tick];
+
+                EditorGUI.DrawRect(loadingRect, new Color(0.5f, 0.5f, 0.5f, 0.12f));
+                GUIStyle spinnerStyle = new GUIStyle(EditorStyles.label)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 16,
+                    normal = { textColor = Color.gray }
+                };
+                EditorGUI.LabelField(loadingRect, anim, spinnerStyle);
             }
 
             Rect nameRect = new Rect(selectionRect.x + selectionRect.height, selectionRect.y, nextX - selectionRect.x - selectionRect.height, selectionRect.height);
@@ -218,10 +262,108 @@ namespace UnityHierarchyColor
             EditorGUI.DrawRect(nameRect, nameBackground);
             EditorGUI.LabelField(nameRect, obj.name, nameStyle);
 
+            Texture texture = !obj.activeSelf ? AssetPreview.GetMiniThumbnail(obj) : null;
             if (texture != null)
             {
                 Rect iconRect = new Rect(selectionRect.x, selectionRect.y, selectionRect.height, selectionRect.height);
                 GUI.DrawTexture(iconRect, texture, ScaleMode.ScaleToFit, true);
+            }
+        }
+
+        private static void EditorUpdate()
+        {
+            int batchCount = 6;
+            var typeConfigs = GetTypeConfigs();
+            int typeCount = typeConfigs != null ? typeConfigs.Count : 0;
+            if (typeCount == 0)
+            {
+                ClearQueuesAndPending();
+                return;
+            }
+
+            for (int i = 0; i < batchCount && countsQueue.TryDequeue(out var obj); i++)
+            {
+                int id = obj != null ? obj.GetInstanceID() : 0;
+                int[] counts = new int[typeCount];
+                if (obj != null)
+                {
+                    AccumulateCountsRecursiveSafe(obj.transform, counts);
+                    cachedCounts[id] = counts;
+                }
+                else
+                {
+                    cachedCounts[id] = counts;
+                }
+
+                lock (pendingCount) pendingCount.Remove(id);
+
+                OnCountsCacheUpdated?.Invoke(id);
+                EditorApplication.RepaintHierarchyWindow();
+            }
+
+            for (int i = 0; i < batchCount && countsSelfQueue.TryDequeue(out var obj); i++)
+            {
+                int id = obj != null ? obj.GetInstanceID() : 0;
+                int[] counts = new int[typeCount];
+
+                if (obj != null)
+                {
+                    AccumulateCountSelfSafe(obj.transform, counts);
+                    cachedCountsOnSelf[id] = counts;
+                }
+                else
+                {
+                    cachedCountsOnSelf[id] = counts;
+                }
+
+                lock (pendingCountSelf) pendingCountSelf.Remove(id);
+
+                OnCountsCacheUpdated?.Invoke(id);
+                EditorApplication.RepaintHierarchyWindow();
+            }
+        }
+
+        private static void AccumulateCountsRecursiveSafe(Transform obj, int[] counts)
+        {
+            try
+            {
+                if (obj != null)
+                    AccumulateCountsRecursive(obj, counts);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("HierarchyObjectColor: Exception in AccumulateCountsRecursive: " + e);
+            }
+        }
+
+        private static void AccumulateCountSelfSafe(Transform obj, int[] counts)
+        {
+            try
+            {
+                if (obj != null)
+                    AccumulateCountSelf(obj, counts);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("HierarchyObjectColor: Exception in AccumulateCountSelf: " + e);
+            }
+        }
+
+        private static void ClearQueuesAndPending()
+        {
+            while (countsQueue.TryDequeue(out _)) { }
+            while (countsSelfQueue.TryDequeue(out _)) { }
+            lock (pendingCount) pendingCount.Clear();
+            lock (pendingCountSelf) pendingCountSelf.Clear();
+        }
+
+        #region Utility
+
+        private static bool lockset(HashSet<int> hs, int id)
+        {
+            lock (hs)
+            {
+                return hs.Add(id);
             }
         }
 
@@ -291,5 +433,8 @@ namespace UnityHierarchyColor
                 AccumulateCountsRecursive(obj.GetChild(c), counts, depth + 1);
             }
         }
+
+        #endregion
     }
 }
+
