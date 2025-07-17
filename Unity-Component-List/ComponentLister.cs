@@ -4,21 +4,16 @@
 */
 
 #if UNITY_EDITOR
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.VFX;
 
 
 /// <summary> Lists all components of an object in unity debug console</summary>
-[UnityEditor.InitializeOnLoad]
+[InitializeOnLoad]
 public class ComponentLister
 {
 
-    [MenuItem("GameObject/List Components")]
+    [MenuItem("GameObject/FlammAlpha/List Components")]
     private static void RevertAllAnimationClips()
     {
         if (Selection.activeObject && Selection.activeObject is GameObject) {

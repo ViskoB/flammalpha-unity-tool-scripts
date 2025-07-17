@@ -30,7 +30,7 @@ public class RenameAnimations
         Debug.Log("All animation objects have been renamed!");
     }
 
-    [MenuItem("Assets/Animation Rename/Clip Name Normal")]
+    [MenuItem("Assets/FlammAlpha/Animation Rename/Clip Name Normal")]
     private static void RevertAnimationClips()
     {
         AnimationClip[] clips = Selection.GetFiltered<AnimationClip>(SelectionMode.Assets);
@@ -41,7 +41,7 @@ public class RenameAnimations
         }
     }
 
-    [MenuItem("Assets/Animation Rename/Clip Name Normal", true)]
+    [MenuItem("Assets/FlammAlpha/Animation Rename/Clip Name Normal", true)]
     private static bool ValidateRevertAnimationClip()
     {
         bool isOnlyClips = Selection.objects.All(obj => obj is AnimationClip);
@@ -91,7 +91,7 @@ public class RenameAnimations
         Debug.Log("All animation objects have been renamed!");
     }
 
-    [MenuItem("Assets/Animation Rename/Clip Name SLASH")]
+    [MenuItem("Assets/FlammAlpha/Animation Rename/Clip Name SLASH")]
     private static void RenameAnimationClips()
     {
         AnimationClip[] clips = Selection.GetFiltered<AnimationClip>(SelectionMode.Assets);
@@ -102,7 +102,7 @@ public class RenameAnimations
         }
     }
 
-    [MenuItem("Assets/Animation Rename/Clip Name SLASH", true)]
+    [MenuItem("Assets/FlammAlpha/Animation Rename/Clip Name SLASH", true)]
     private static bool ValidateRenameAnimationClip()
     {
         bool isOnlyClips = Selection.objects.All(obj => obj is AnimationClip);
@@ -153,7 +153,7 @@ public class RenameAnimations
         Debug.Log("Animation names have been successfully changed!");
     }
 
-    [MenuItem("Assets/Animation Rename/File Name NOSPACE")]
+    [MenuItem("Assets/FlammAlpha/Animation Rename/File Name NOSPACE")]
     private static void RenameSelectedAssetFile()
     {
         Object asset = Selection.activeObject;
@@ -171,7 +171,7 @@ public class RenameAnimations
     }
 
     // We only want the menu to be enabled when an AnimationClip is selected
-    [MenuItem("Assets/Animation Rename/File Name NOSPACE", true)]
+    [MenuItem("Assets/FlammAlpha/Animation Rename/File Name NOSPACE", true)]
     private static bool CanRenameFile()
     {
         return Selection.activeObject && Selection.activeObject is AnimationClip;
