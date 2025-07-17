@@ -41,6 +41,9 @@ namespace UnityHierarchyColor
         // Event raised when a cache entry finishes updating
         public static event Action<int> OnCountsCacheUpdated;
 
+        // --- New: Track which type index is filtered, -1 means no filter
+        private static int filteredTypeIndex = -1;
+
         static HierarchyObjectColor()
         {
             HierarchyHighlightConfigUtility.OnConfigUpdate += OnConfigUpdate;
@@ -89,6 +92,7 @@ namespace UnityHierarchyColor
         private static List<TypeConfigEntry> GetTypeConfigs() => currentConfig?.typeConfigs;
 
         private static List<NameHighlightEntry> GetNameHighlightConfigs() => currentConfig?.nameHighlightConfigs;
+
         private static void HandleHierarchyWindowItemOnGUI(int instanceID, Rect selectionRect)
         {
             var typeConfigs = GetTypeConfigs();
@@ -106,41 +110,68 @@ namespace UnityHierarchyColor
             if (!countsSelfReady && lockset(pendingCountSelf, instanceID)) countsSelfQueue.Enqueue(obj);
             float nextX = selectionRect.xMax;
 
+            // For clickable counter areas
+            List<(int typeIndex, Rect counterRect)> counterRects = new();
+
             Color nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
             Color textColor = Color.white;
             Color disabledTextColor = new Color(0.4f, 0.4f, 0.4f);
 
-            bool prefixHighlightFound = false;
-            if (nameHighlightConfigs != null && nameHighlightConfigs.Count > 0)
+            // --- Filter logic: If filter is active, skip most coloring unless object matches type ---
+            bool isMatchedByFilter = true;
+            int objectFilterIndex = -1;
+            if (filteredTypeIndex >= 0)
             {
-                foreach (var nh in nameHighlightConfigs)
+                if (typeConfigs != null && filteredTypeIndex < typeConfigs.Count)
                 {
-                    if (string.IsNullOrEmpty(nh.prefix)) continue;
-                    bool match = nh.propagateUpwards ? NameOrChildHasPrefixRecursive(obj, nh.prefix) : obj.name.StartsWith(nh.prefix, StringComparison.Ordinal);
-                    if (match)
-                    {
-                        nameBackground = nh.color;
-                        prefixHighlightFound = true;
-                        break;
-                    }
+                    var tce = typeConfigs[filteredTypeIndex];
+                    Type type = GetCachedType(tce.typeName);
+                    if (type != null && obj.GetComponent(type) != null)
+                        objectFilterIndex = filteredTypeIndex; // This object matches filter
+                    else
+                        isMatchedByFilter = false; // Doesn't match, don't highlight
                 }
             }
 
-            if (!prefixHighlightFound && typeConfigs != null)
+            // --- Adjusted Highlighting selection ---
+            bool prefixHighlightFound = false;
+            if (isMatchedByFilter)
             {
-                for (int i = 0; i < typeConfigs.Count; i++)
+                if (nameHighlightConfigs != null && nameHighlightConfigs.Count > 0)
                 {
-                    var tce = typeConfigs[i];
-                    if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
-                    Type type = GetCachedType(tce.typeName);
-                    if (type == null) continue;
-                    bool match = tce.propagateUpwards ? HasComponentInHierarchy(obj, type) : obj.GetComponent(type) != null;
-                    if (match)
+                    foreach (var nh in nameHighlightConfigs)
                     {
-                        nameBackground = tce.color;
-                        break;
+                        if (string.IsNullOrEmpty(nh.prefix)) continue;
+                        bool match = nh.propagateUpwards ? NameOrChildHasPrefixRecursive(obj, nh.prefix) : obj.name.StartsWith(nh.prefix, StringComparison.Ordinal);
+                        if (match)
+                        {
+                            nameBackground = nh.color;
+                            prefixHighlightFound = true;
+                            break;
+                        }
                     }
                 }
+
+                if (!prefixHighlightFound && typeConfigs != null)
+                {
+                    for (int i = 0; i < typeConfigs.Count; i++)
+                    {
+                        var tce = typeConfigs[i];
+                        if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
+                        Type type = GetCachedType(tce.typeName);
+                        if (type == null) continue;
+                        bool match = tce.propagateUpwards ? HasComponentInHierarchy(obj, type) : obj.GetComponent(type) != null;
+                        if (match)
+                        {
+                            nameBackground = tce.color;
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
             }
 
             if (Selection.instanceIDs.Contains(instanceID))
@@ -167,7 +198,23 @@ namespace UnityHierarchyColor
                     float labelWidth = Mathf.Max(EditorStyles.label.CalcSize(new GUIContent(label)).x + 6, 32);
                     nextX -= labelWidth + 2f;
                     Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
+
+                    counterRects.Add((i, countRect));
+
                     EditorGUI.DrawRect(countRect, typeConfigs[i].color);
+
+                    if (filteredTypeIndex == i)
+                    {
+                        Handles.color = Color.yellow;
+                        Handles.DrawAAPolyLine(3,
+                            new Vector3(countRect.x, countRect.y),
+                            new Vector3(countRect.xMax, countRect.y),
+                            new Vector3(countRect.xMax, countRect.yMax),
+                            new Vector3(countRect.x, countRect.yMax),
+                            new Vector3(countRect.x, countRect.y)
+                        );
+                    }
+
                     EditorGUI.LabelField(countRect, new GUIContent(label, typeConfigs[i].typeName), countStyle);
                 }
             }
@@ -189,6 +236,22 @@ namespace UnityHierarchyColor
                 EditorGUI.LabelField(loadingRect, anim, spinnerStyle);
             }
 
+            // --- Detect mouseclick on counter ---
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
+            {
+                foreach (var (typeIdx, rect) in counterRects)
+                {
+                    if (rect.Contains(Event.current.mousePosition))
+                    {
+                        if (filteredTypeIndex == typeIdx) filteredTypeIndex = -1;
+                        else filteredTypeIndex = typeIdx;
+                        EditorApplication.RepaintHierarchyWindow();
+                        Event.current.Use();
+                        break;
+                    }
+                }
+            }
+
             Rect nameRect = new Rect(selectionRect.x + selectionRect.height, selectionRect.y, nextX - selectionRect.x - selectionRect.height, selectionRect.height);
             GUIStyle nameStyle = new GUIStyle(EditorStyles.label)
             {
@@ -199,6 +262,13 @@ namespace UnityHierarchyColor
 
             EditorGUI.DrawRect(nameRect, nameBackground);
             EditorGUI.LabelField(nameRect, obj.name, nameStyle);
+
+            // --- Dim names if filtered out
+            if (filteredTypeIndex >= 0 && objectFilterIndex != filteredTypeIndex)
+            {
+                Color overlay = new Color(0f, 0f, 0f, 0.18f);
+                EditorGUI.DrawRect(selectionRect, overlay);
+            }
 
             Texture texture = !obj.activeSelf ? AssetPreview.GetMiniThumbnail(obj) : null;
             if (texture != null)
@@ -224,7 +294,7 @@ namespace UnityHierarchyColor
                 int id = obj?.GetInstanceID() ?? 0;
                 int[] counts = new int[typeCount];
                 if (obj != null) AccumulateCountsRecursiveSafe(obj.transform, counts);
-                    cachedCounts[id] = counts;
+                cachedCounts[id] = counts;
                 lock (pendingCount) pendingCount.Remove(id);
                 OnCountsCacheUpdated?.Invoke(id);
                 EditorApplication.RepaintHierarchyWindow();
@@ -235,7 +305,7 @@ namespace UnityHierarchyColor
                 int id = obj?.GetInstanceID() ?? 0;
                 int[] counts = new int[typeCount];
                 if (obj != null) AccumulateCountSelfSafe(obj.transform, counts);
-                    cachedCountsOnSelf[id] = counts;
+                cachedCountsOnSelf[id] = counts;
                 lock (pendingCountSelf) pendingCountSelf.Remove(id);
                 OnCountsCacheUpdated?.Invoke(id);
                 EditorApplication.RepaintHierarchyWindow();
@@ -246,12 +316,12 @@ namespace UnityHierarchyColor
         {
             try { if (obj != null) AccumulateCountsRecursive(obj, counts); }
             catch (Exception e) { Debug.LogError("HierarchyObjectColor: Exception in AccumulateCountsRecursive: " + e); }
-            }
+        }
         private static void AccumulateCountSelfSafe(Transform obj, int[] counts)
         {
             try { if (obj != null) AccumulateCountSelf(obj, counts); }
             catch (Exception e) { Debug.LogError("HierarchyObjectColor: Exception in AccumulateCountSelf: " + e); }
-            }
+        }
         private static void ClearQueuesAndPending()
         {
             while (countsQueue.TryDequeue(out _)) { }
@@ -265,7 +335,7 @@ namespace UnityHierarchyColor
         private static bool lockset(HashSet<int> hs, int id)
         {
             lock (hs) { return hs.Add(id); }
-            }
+        }
         private static bool HasComponentInHierarchy(GameObject obj, Type componentType, int depth = 0)
         {
             if (depth > MaxDepth)
@@ -306,8 +376,8 @@ namespace UnityHierarchyColor
                 Type t = GetCachedType(typeConfigs[i].typeName);
                 if (t != null)
                     counts[i] += obj.GetComponents(t).Length;
-                }
             }
+        }
         private static void AccumulateCountsRecursive(Transform obj, int[] counts, int depth = 0)
         {
             if (depth > MaxDepth)
@@ -318,7 +388,7 @@ namespace UnityHierarchyColor
             AccumulateCountSelf(obj, counts);
             for (int c = 0; c < obj.childCount; ++c)
                 AccumulateCountsRecursive(obj.GetChild(c), counts, depth + 1);
-            }
+        }
         #endregion
     }
 }
