@@ -164,6 +164,7 @@ namespace UnityHierarchyColor
                     color = new Color(0.3f, 0.1f, 0.1f)
                 }
             };
+            newConfig.propertyHighlightConfigs = new List<PropertyHighlightEntry>();
             return newConfig;
         }
 
@@ -200,6 +201,38 @@ namespace UnityHierarchyColor
                 SaveConfig(config);
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Adds or updates a property highlight entry. Returns true if an entry was added/updated.
+        /// </summary>
+        public static bool AddOrUpdatePropertyHighlightEntry(
+            string componentTypeName,
+            string propertyName,
+            Color color,
+            bool propagateUpwards = false)
+        {
+            var config = GetOrCreateConfig();
+            var existing = config.propertyHighlightConfigs.Find(e =>
+                e.componentTypeName == componentTypeName &&
+                e.propertyName == propertyName);
+
+            if (existing != null)
+            {
+                existing.color = color;
+                existing.propagateUpwards = propagateUpwards;
+                SaveConfig(config);
+                return true;
+            }
+            config.propertyHighlightConfigs.Add(new PropertyHighlightEntry
+            {
+                componentTypeName = componentTypeName,
+                propertyName = propertyName,
+                color = color,
+                propagateUpwards = propagateUpwards
+            });
+            SaveConfig(config);
+            return true;
         }
     }
 }

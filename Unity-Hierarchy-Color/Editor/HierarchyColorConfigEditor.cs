@@ -17,6 +17,7 @@ namespace UnityHierarchyColor
         [NonSerialized] private HierarchyHighlightConfig config;
         [NonSerialized] private ReorderableList typeConfigList;
         [NonSerialized] private ReorderableList nameHighlightList;
+        [NonSerialized] private ReorderableList propertyHighlightList;
 
         [MenuItem("Tools/FlammAlpha/Hierarchy Color/Config")]
         protected static void OpenWindow()
@@ -65,6 +66,18 @@ namespace UnityHierarchyColor
             }
         }
 
+        private void RemovePropertyHighlightElement(int index)
+        {
+            if (config == null || config.propertyHighlightConfigs == null) return;
+            if (index >= 0 && index < config.propertyHighlightConfigs.Count)
+            {
+                Undo.RegisterCompleteObjectUndo(config, "Remove List Element");
+                config.propertyHighlightConfigs.RemoveAt(index);
+                HierarchyHighlightConfigUtility.SaveConfig(config);
+                GUIUtility.keyboardControl = 0;
+            }
+        }
+
         private void ShowTypePicker(Action<Type> onPick)
         {
             TypeSearchPopup.Show(type =>
@@ -90,76 +103,58 @@ namespace UnityHierarchyColor
                 .FirstOrDefault(tt => tt.AssemblyQualifiedName == typeName || tt.FullName == typeName);
         }
 
+        private List<string> GetTypePropertyNames(Type type)
+        {
+            if (type == null) return new List<string>();
+            var names = type
+                .GetMembers(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public)
+                .Where(m => (m.MemberType == System.Reflection.MemberTypes.Field || m.MemberType == System.Reflection.MemberTypes.Property))
+                .Select(m => m.Name)
+                .Distinct()
+                .ToList();
+            return names;
+        }
+
+        private List<string> GetListPropertyNames(Type type)
+        {
+            if (type == null) return new List<string>();
+            var props = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                .Where(p => typeof(System.Collections.IList).IsAssignableFrom(p.PropertyType)
+                    || (p.PropertyType.IsGenericType && p.PropertyType.GetInterfaces().Any(x =>
+                        x.IsGenericType && x.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IList<>))))
+                .Select(p => p.Name)
+                .Distinct()
+                .ToList();
+            return props;
+        }
+
         private void SetupReorderableLists()
+        {
+            EnsureConfigListsInitialized();
+
+            SetupTypeConfigList();
+            SetupNameHighlightList();
+            SetupPropertyHighlightList();
+        }
+
+        private void EnsureConfigListsInitialized()
         {
             if (config.typeConfigs == null)
                 config.typeConfigs = new List<TypeConfigEntry>();
             if (config.nameHighlightConfigs == null)
                 config.nameHighlightConfigs = new List<NameHighlightEntry>();
+            if (config.propertyHighlightConfigs == null)
+                config.propertyHighlightConfigs = new List<PropertyHighlightEntry>();
+        }
 
+        private void SetupTypeConfigList()
+        {
             typeConfigList = new ReorderableList(config.typeConfigs, typeof(TypeConfigEntry), true, true, true, true);
             typeConfigList.drawHeaderCallback = rect =>
-            {
-                EditorGUI.LabelField(rect, "Component Highlight Rules");
-            };
-            typeConfigList.drawElementCallback = (rect, index, active, focused) =>
-            {
-                float margin = 5;
-                float wRemove = 25, wColor = 80, wSymbol = 40, wChange = 70, wType = 120, wPropagate = 90;
-                float xMax = rect.xMax, y = rect.y + 2;
-                float xRemove = xMax - wRemove;
-                float xPropagate = xRemove - margin - wPropagate;
-                float xColor = xPropagate - margin - wColor;
-                float xSymbol = xColor - margin - wSymbol;
-                float xType = rect.x;
-                float xChange = xType + wType + margin;
-
-                if (config.typeConfigs == null || index < 0 || index >= config.typeConfigs.Count) return;
-                var entry = config.typeConfigs[index];
-
-                Type selectedType = GetTypeFromString(entry.typeName);
-
-                if (selectedType != null)
                 {
-                    EditorGUI.LabelField(new Rect(xType, y, wType, EditorGUIUtility.singleLineHeight), selectedType.Name);
-                    if (GUI.Button(new Rect(xChange, y, wChange, EditorGUIUtility.singleLineHeight), "Change"))
-                    {
-                        Undo.RegisterCompleteObjectUndo(config, "Change Type");
-                        ShowTypePicker(type =>
-                        {
-                            entry.typeName = type.AssemblyQualifiedName;
-                            HierarchyHighlightConfigUtility.SaveConfig(config);
-                        });
-                    }
-                }
-                else
-                {
-                    if (GUI.Button(new Rect(xType, y, wType + wChange + margin, EditorGUIUtility.singleLineHeight), "Pick Type"))
-                    {
-                        Undo.RegisterCompleteObjectUndo(config, "Pick Type");
-                        ShowTypePicker(type =>
-                        {
-                            entry.typeName = type.AssemblyQualifiedName;
-                            HierarchyHighlightConfigUtility.SaveConfig(config);
-                        });
-                    }
-                }
-
-                entry.symbol = EditorGUI.TextField(
-                    new Rect(xSymbol, y, wSymbol, EditorGUIUtility.singleLineHeight),
-                    entry.symbol);
-                entry.color = EditorGUI.ColorField(
-                    new Rect(xColor, y, wColor, EditorGUIUtility.singleLineHeight),
-                    entry.color);
-                entry.propagateUpwards = EditorGUI.ToggleLeft(
-                    new Rect(xPropagate, y, wPropagate, EditorGUIUtility.singleLineHeight),
-                    "Recursive",
-                    entry.propagateUpwards);
-                if (GUI.Button(new Rect(xRemove, y, wRemove, EditorGUIUtility.singleLineHeight), "✗"))
-                {
-                    RemoveTypeConfigElement(index);
-                }
-            };
+                    EditorGUI.LabelField(rect, "Component Highlight Rules");
+                };
+            typeConfigList.drawElementCallback = DrawTypeConfigElement;
             typeConfigList.onAddCallback = list =>
             {
                 Undo.RegisterCompleteObjectUndo(config, "Add Type Config");
@@ -170,40 +165,73 @@ namespace UnityHierarchyColor
             {
                 RemoveTypeConfigElement(list.index);
             };
+        }
 
+        private void DrawTypeConfigElement(Rect rect, int index, bool active, bool focused)
+        {
+            float margin = 5;
+            float wRemove = 25, wColor = 80, wSymbol = 40, wChange = 70, wType = 120, wPropagate = 90;
+            float xMax = rect.xMax, y = rect.y + 2;
+            float xRemove = xMax - wRemove;
+            float xPropagate = xRemove - margin - wPropagate;
+            float xColor = xPropagate - margin - wColor;
+            float xSymbol = xColor - margin - wSymbol;
+            float xType = rect.x;
+            float xChange = xType + wType + margin;
+
+            if (config.typeConfigs == null || index < 0 || index >= config.typeConfigs.Count) return;
+            var entry = config.typeConfigs[index];
+            Type selectedType = GetTypeFromString(entry.typeName);
+
+            if (selectedType != null)
+            {
+                EditorGUI.LabelField(new Rect(xType, y, wType, EditorGUIUtility.singleLineHeight), selectedType.Name);
+                if (GUI.Button(new Rect(xChange, y, wChange, EditorGUIUtility.singleLineHeight), "Change"))
+                {
+                    Undo.RegisterCompleteObjectUndo(config, "Change Type");
+                    ShowTypePicker(type =>
+                    {
+                        entry.typeName = type.AssemblyQualifiedName;
+                        HierarchyHighlightConfigUtility.SaveConfig(config);
+                    });
+                }
+            }
+            else
+            {
+                if (GUI.Button(new Rect(xType, y, wType + wChange + margin, EditorGUIUtility.singleLineHeight), "Pick Type"))
+                {
+                    Undo.RegisterCompleteObjectUndo(config, "Pick Type");
+                    ShowTypePicker(type =>
+                    {
+                        entry.typeName = type.AssemblyQualifiedName;
+                        HierarchyHighlightConfigUtility.SaveConfig(config);
+                    });
+                }
+            }
+            entry.symbol = EditorGUI.TextField(
+                new Rect(xSymbol, y, wSymbol, EditorGUIUtility.singleLineHeight),
+                entry.symbol);
+            entry.color = EditorGUI.ColorField(
+                new Rect(xColor, y, wColor, EditorGUIUtility.singleLineHeight),
+                entry.color);
+            entry.propagateUpwards = EditorGUI.ToggleLeft(
+                new Rect(xPropagate, y, wPropagate, EditorGUIUtility.singleLineHeight),
+                "Recursive",
+                entry.propagateUpwards);
+            if (GUI.Button(new Rect(xRemove, y, wRemove, EditorGUIUtility.singleLineHeight), "✗"))
+            {
+                RemoveTypeConfigElement(index);
+            }
+        }
+
+        private void SetupNameHighlightList()
+        {
             nameHighlightList = new ReorderableList(config.nameHighlightConfigs, typeof(NameHighlightEntry), true, true, true, true);
             nameHighlightList.drawHeaderCallback = rect =>
             {
                 EditorGUI.LabelField(rect, "Name Highlight Rules");
             };
-            nameHighlightList.drawElementCallback = (rect, index, active, focused) =>
-            {
-                float margin = 5;
-                float wColor = 80, wRemove = 25, wPropagate = 90;
-                float xMax = rect.xMax, y = rect.y + 2;
-                float xRemove = xMax - wRemove;
-                float xPropagate = xRemove - margin - wPropagate;
-                float xColor = xPropagate - margin - wColor;
-                float xPrefix = rect.x;
-
-                if (config.nameHighlightConfigs == null || index < 0 || index >= config.nameHighlightConfigs.Count) return;
-                var entry = config.nameHighlightConfigs[index];
-
-                entry.prefix = EditorGUI.TextField(
-                    new Rect(xPrefix, y, xColor - xPrefix - margin, EditorGUIUtility.singleLineHeight),
-                    entry.prefix);
-                entry.color = EditorGUI.ColorField(
-                    new Rect(xColor, y, wColor, EditorGUIUtility.singleLineHeight),
-                    entry.color);
-                entry.propagateUpwards = EditorGUI.ToggleLeft(
-                    new Rect(xPropagate, y, wPropagate, EditorGUIUtility.singleLineHeight),
-                    "Recursive",
-                    entry.propagateUpwards);
-                if (GUI.Button(new Rect(xRemove, y, wRemove, EditorGUIUtility.singleLineHeight), "✗"))
-                {
-                    RemoveNameHighlightElement(index);
-                }
-            };
+            nameHighlightList.drawElementCallback = DrawNameHighlightElement;
             nameHighlightList.onAddCallback = list =>
             {
                 Undo.RegisterCompleteObjectUndo(config, "Add Name Highlight");
@@ -216,12 +244,149 @@ namespace UnityHierarchyColor
             };
         }
 
+        private void DrawNameHighlightElement(Rect rect, int index, bool active, bool focused)
+        {
+            float margin = 5;
+            float wColor = 80, wRemove = 25, wPropagate = 90;
+            float xMax = rect.xMax, y = rect.y + 2;
+            float xRemove = xMax - wRemove;
+            float xPropagate = xRemove - margin - wPropagate;
+            float xColor = xPropagate - margin - wColor;
+            float xPrefix = rect.x;
+
+            if (config.nameHighlightConfigs == null || index < 0 || index >= config.nameHighlightConfigs.Count) return;
+            var entry = config.nameHighlightConfigs[index];
+            entry.prefix = EditorGUI.TextField(
+                new Rect(xPrefix, y, xColor - xPrefix - margin, EditorGUIUtility.singleLineHeight),
+                entry.prefix);
+            entry.color = EditorGUI.ColorField(
+                new Rect(xColor, y, wColor, EditorGUIUtility.singleLineHeight),
+                entry.color);
+            entry.propagateUpwards = EditorGUI.ToggleLeft(
+                new Rect(xPropagate, y, wPropagate, EditorGUIUtility.singleLineHeight),
+                "Recursive",
+                entry.propagateUpwards);
+            if (GUI.Button(new Rect(xRemove, y, wRemove, EditorGUIUtility.singleLineHeight), "✗"))
+            {
+                RemoveNameHighlightElement(index);
+            }
+        }
+
+        private void SetupPropertyHighlightList()
+        {
+            propertyHighlightList = new ReorderableList(
+                config.propertyHighlightConfigs,
+                typeof(PropertyHighlightEntry),
+                true, true, true, true
+            );
+            propertyHighlightList.drawHeaderCallback = rect =>
+            {
+                var label = $"Property Highlight Rules ({config.propertyHighlightConfigs.Count})";
+                EditorGUI.LabelField(rect, label);
+            };
+            propertyHighlightList.drawElementCallback = DrawPropertyHighlightElement;
+            propertyHighlightList.onAddCallback = list =>
+            {
+                Undo.RegisterCompleteObjectUndo(config, "Add Property Highlight");
+                config.propertyHighlightConfigs.Add(new PropertyHighlightEntry());
+                HierarchyHighlightConfigUtility.SaveConfig(config);
+            };
+            propertyHighlightList.onRemoveCallback = list =>
+            {
+                RemovePropertyHighlightElement(list.index);
+            };
+        }
+
+        private void DrawPropertyHighlightElement(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            float margin = 5;
+            float wRemove = 25, wColor = 80, wSymbol = 40, wPropagate = 90;
+            float wComponent = 120, wProperty = 100, wChange = 70;
+            float y = rect.y + 2;
+            float x = rect.x;
+            float xMax = rect.xMax;
+
+            float xRemove = xMax - wRemove;
+            float xPropagate = xRemove - margin - wPropagate;
+            float xColor = xPropagate - margin - wColor;
+            float xSymbol = xColor - margin - wSymbol;
+            float xProperty = xSymbol - margin - wProperty;
+            float xComponent = x;
+
+            if (config.propertyHighlightConfigs == null || index < 0 || index >= config.propertyHighlightConfigs.Count) return;
+            var entry = config.propertyHighlightConfigs[index];
+            Type componentType = GetTypeFromString(entry.componentTypeName);
+            if (componentType != null)
+            {
+                EditorGUI.LabelField(new Rect(xComponent, y, wComponent, EditorGUIUtility.singleLineHeight), componentType.Name);
+                if (GUI.Button(new Rect(xComponent + wComponent + margin, y, wChange, EditorGUIUtility.singleLineHeight), "Change"))
+                {
+                    Undo.RegisterCompleteObjectUndo(config, "Change Component Type");
+                    ShowTypePicker(type =>
+                    {
+                        entry.componentTypeName = type.AssemblyQualifiedName;
+                        entry.propertyName = null;
+                        HierarchyHighlightConfigUtility.SaveConfig(config);
+                    });
+                }
+            }
+            else
+            {
+                if (GUI.Button(new Rect(xComponent, y, wComponent + wChange + margin, EditorGUIUtility.singleLineHeight), "Pick Type"))
+                {
+                    Undo.RegisterCompleteObjectUndo(config, "Pick Component Type");
+                    ShowTypePicker(type =>
+                    {
+                        entry.componentTypeName = type.AssemblyQualifiedName;
+                        entry.propertyName = null;
+                        HierarchyHighlightConfigUtility.SaveConfig(config);
+                    });
+                }
+            }
+
+            List<string> propertyOptions = GetListPropertyNames(componentType);
+            int selectedIndex = propertyOptions.IndexOf(entry.propertyName ?? "");
+            if (selectedIndex < 0) selectedIndex = 0;
+            if (propertyOptions.Count > 0)
+            {
+                int newSelectedIndex = EditorGUI.Popup(
+                    new Rect(xProperty, y, wProperty, EditorGUIUtility.singleLineHeight),
+                    selectedIndex,
+                    propertyOptions.ToArray()
+                );
+                entry.propertyName = propertyOptions[newSelectedIndex];
+            }
+            else
+            {
+                EditorGUI.LabelField(
+                    new Rect(xProperty, y, wProperty, EditorGUIUtility.singleLineHeight),
+                    "No list properties"
+                );
+                entry.propertyName = null;
+            }
+
+            entry.symbol = EditorGUI.TextField(
+                new Rect(xSymbol, y, wSymbol, EditorGUIUtility.singleLineHeight),
+                entry.symbol);
+            entry.color = EditorGUI.ColorField(
+                new Rect(xColor, y, wColor, EditorGUIUtility.singleLineHeight),
+                entry.color);
+            entry.propagateUpwards = EditorGUI.ToggleLeft(
+                new Rect(xPropagate, y, wPropagate, EditorGUIUtility.singleLineHeight),
+                "Recursive",
+                entry.propagateUpwards);
+            if (GUI.Button(new Rect(xRemove, y, wRemove, EditorGUIUtility.singleLineHeight), "✗"))
+            {
+                RemovePropertyHighlightElement(index);
+            }
+        }
+
         protected void OnGUI()
         {
             if (
                 config == null ||
-                typeConfigList == null || nameHighlightList == null ||
-                config.typeConfigs == null || config.nameHighlightConfigs == null
+                typeConfigList == null || nameHighlightList == null || propertyHighlightList == null ||
+                config.typeConfigs == null || config.nameHighlightConfigs == null || config.propertyHighlightConfigs == null
             )
             {
                 EditorGUILayout.HelpBox(
@@ -247,6 +412,10 @@ namespace UnityHierarchyColor
             EditorGUILayout.Space();
 
             nameHighlightList.DoLayoutList();
+
+            EditorGUILayout.Space();
+
+            propertyHighlightList.DoLayoutList();
 
             EditorGUILayout.Space();
 
