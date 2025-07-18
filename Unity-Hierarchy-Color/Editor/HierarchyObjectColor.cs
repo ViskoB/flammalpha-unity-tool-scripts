@@ -21,32 +21,74 @@ namespace UnityHierarchyColor
         private static readonly Dictionary<string, Type> typeCache = new();
         private static readonly Dictionary<string, Type> propertyTypeCache = new();
 
-        // Caches
-        private static readonly ConcurrentDictionary<int, int[]> cachedCounts = new();
-        private static readonly ConcurrentDictionary<int, int[]> cachedCountsOnSelf = new();
-        private static readonly ConcurrentDictionary<int, int[]> cachedPropertyCounts = new();
-        private static readonly ConcurrentDictionary<int, int[]> cachedPropertyCountsOnSelf = new();
-
-        // Queue for unprocessed instanceIDs
-        private static readonly ConcurrentQueue<GameObject> countsQueue = new();
-        private static readonly ConcurrentQueue<GameObject> countsSelfQueue = new();
-        private static readonly ConcurrentQueue<GameObject> propertyCountsQueue = new();
-        private static readonly ConcurrentQueue<GameObject> propertyCountsSelfQueue = new();
-
-        // Keeps track of what's already requested (so we don't re-queue unnecessarily)
-        private static readonly HashSet<int> pendingCount = new();
-        private static readonly HashSet<int> pendingCountSelf = new();
-        private static readonly HashSet<int> pendingPropertyCount = new();
-        private static readonly HashSet<int> pendingPropertyCountSelf = new();
-
-        private static int lastRepaintFrame = -1;
-        private static int customFrameCounter = 1;
+        // Use modular CountContexts for all caching and queueing of type/property highlight counts
+        private static readonly CountContext typeCountContext = new(
+            new ConcurrentDictionary<int, int[]>(),
+            new ConcurrentDictionary<int, int[]>(),
+            new ConcurrentQueue<GameObject>(),
+            new ConcurrentQueue<GameObject>(),
+            new HashSet<int>(),
+            new HashSet<int>(),
+                () => GetTypeConfigs()?.Cast<object>().ToList(),
+                AccumulateCountsRecursiveSafe,
+                AccumulateCountSelfSafe
+        );
+        private static readonly CountContext propertyCountContext = new(
+            new ConcurrentDictionary<int, int[]>(),
+            new ConcurrentDictionary<int, int[]>(),
+            new ConcurrentQueue<GameObject>(),
+            new ConcurrentQueue<GameObject>(),
+            new HashSet<int>(),
+            new HashSet<int>(),
+                () => GetPropertyHighlightConfigs()?.Cast<object>().ToList(),
+                AccumulatePropertyCountsRecursiveSafe,
+                AccumulatePropertyCountSelfSafe
+        );
 
         private static readonly string[] spinner = { "|", "/", "-", "\\" };
 
         public static event Action<int> OnCountsCacheUpdated;
 
         private static int filteredTypeIndex = -1;
+
+        private enum CountKind { Type, Property }
+
+        private class CountContext
+        {
+            public readonly ConcurrentDictionary<int, int[]> RecursiveCache;
+            public readonly ConcurrentDictionary<int, int[]> SelfCache;
+            public readonly ConcurrentQueue<GameObject> RecursiveQueue;
+            public readonly ConcurrentQueue<GameObject> SelfQueue;
+            public readonly HashSet<int> PendingRecursive;
+            public readonly HashSet<int> PendingSelf;
+            public readonly Func<List<object>> ConfigGetter;
+            public readonly Action<Transform, int[]> RecursiveAccum;
+            public readonly Action<Transform, int[]> SelfAccum;
+            public int NumConfigs => ConfigGetter()?.Count ?? 0;
+
+            public CountContext(
+                ConcurrentDictionary<int, int[]> recursiveCache,
+                ConcurrentDictionary<int, int[]> selfCache,
+                ConcurrentQueue<GameObject> recursiveQueue,
+                ConcurrentQueue<GameObject> selfQueue,
+                HashSet<int> pendingRecursive,
+                HashSet<int> pendingSelf,
+                Func<List<object>> configGetter,
+                Action<Transform, int[]> recursiveAccum,
+                Action<Transform, int[]> selfAccum
+            )
+            {
+                RecursiveCache = recursiveCache;
+                SelfCache = selfCache;
+                RecursiveQueue = recursiveQueue;
+                SelfQueue = selfQueue;
+                PendingRecursive = pendingRecursive;
+                PendingSelf = pendingSelf;
+                ConfigGetter = configGetter;
+                RecursiveAccum = recursiveAccum;
+                SelfAccum = selfAccum;
+            }
+        }
 
         static HierarchyObjectColor()
         {
@@ -67,7 +109,9 @@ namespace UnityHierarchyColor
                 {
                     if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
                     if (!typeCache.ContainsKey(tce.typeName))
+                    {
                         typeCache[tce.typeName] = Type.GetType(tce.typeName);
+                    }
                 }
             }
             if (currentConfig?.propertyHighlightConfigs != null)
@@ -76,7 +120,9 @@ namespace UnityHierarchyColor
                 {
                     if (phe == null || string.IsNullOrEmpty(phe.componentTypeName)) continue;
                     if (!propertyTypeCache.ContainsKey(phe.componentTypeName))
+                    {
                         propertyTypeCache[phe.componentTypeName] = Type.GetType(phe.componentTypeName);
+                    }
                 }
             }
             ForceRecache();
@@ -89,15 +135,15 @@ namespace UnityHierarchyColor
 
         public static void ForceRecache()
         {
-            cachedCounts.Clear();
-            cachedCountsOnSelf.Clear();
-            cachedPropertyCounts.Clear();
-            cachedPropertyCountsOnSelf.Clear();
-            pendingCount.Clear();
-            pendingCountSelf.Clear();
-            pendingPropertyCount.Clear();
-            pendingPropertyCountSelf.Clear();
-            ClearQueuesAndPending();
+            foreach (var ctx in new[] { typeCountContext, propertyCountContext })
+            {
+                ctx.RecursiveCache.Clear();
+                ctx.SelfCache.Clear();
+                lock (ctx.PendingRecursive) ctx.PendingRecursive.Clear();
+                lock (ctx.PendingSelf) ctx.PendingSelf.Clear();
+                while (ctx.RecursiveQueue.TryDequeue(out _)) { }
+                while (ctx.SelfQueue.TryDequeue(out _)) { }
+            }
             EditorApplication.RepaintHierarchyWindow();
         }
 
@@ -107,6 +153,77 @@ namespace UnityHierarchyColor
         private static List<TypeConfigEntry> GetTypeConfigs() => currentConfig?.typeConfigs;
         private static List<NameHighlightEntry> GetNameHighlightConfigs() => currentConfig?.nameHighlightConfigs;
         private static List<PropertyHighlightEntry> GetPropertyHighlightConfigs() => currentConfig?.propertyHighlightConfigs;
+
+        private static void EnsureCountsQueued(CountContext ctx, int instanceID, GameObject obj)
+        {
+            if (!ctx.RecursiveCache.ContainsKey(instanceID) && lockset(ctx.PendingRecursive, instanceID))
+            {
+                ctx.RecursiveQueue.Enqueue(obj);
+            }
+            if (!ctx.SelfCache.ContainsKey(instanceID) && lockset(ctx.PendingSelf, instanceID))
+            {
+                ctx.SelfQueue.Enqueue(obj);
+            }
+        }
+
+        private static Color GetBackgroundHighlightColor(GameObject obj, List<NameHighlightEntry> nameHighlightConfigs, List<TypeConfigEntry> typeConfigs, List<PropertyHighlightEntry> propertyConfigs)
+        {
+            Color nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
+
+            // Name prefix highlighting
+            if (nameHighlightConfigs != null && nameHighlightConfigs.Count > 0)
+            {
+                foreach (var nh in nameHighlightConfigs)
+                {
+                    if (string.IsNullOrEmpty(nh.prefix)) continue;
+                    bool match = nh.propagateUpwards ? NameOrChildHasPrefixRecursive(obj, nh.prefix) : obj.name.StartsWith(nh.prefix, StringComparison.Ordinal);
+                    if (match)
+                    {
+                        return nh.color;
+                    }
+                }
+            }
+
+            // Type highlighting
+            if (typeConfigs != null)
+            {
+                for (int i = 0; i < typeConfigs.Count; i++)
+                {
+                    var tce = typeConfigs[i];
+                    if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
+                    Type type = GetCachedType(tce.typeName);
+                    if (type == null) continue;
+                    bool match = tce.propagateUpwards ? HasComponentInHierarchy(obj, type) : obj.GetComponent(type) != null;
+                    if (match)
+                    {
+                        return tce.color;
+                    }
+                }
+            }
+
+            // Property highlighting
+            if (propertyConfigs != null && propertyConfigs.Count > 0)
+            {
+                for (int i = 0; i < propertyConfigs.Count; i++)
+                {
+                    var phe = propertyConfigs[i];
+                    if (phe == null || string.IsNullOrEmpty(phe.componentTypeName) || string.IsNullOrEmpty(phe.propertyName)) continue;
+                    Type ptype = propertyTypeCache.TryGetValue(phe.componentTypeName, out var foundType) ? foundType : null;
+                    if (ptype == null) continue;
+                    var comps = obj.GetComponents(ptype);
+                    foreach (var comp in comps)
+                    {
+                        object val = GetComponentValue(comp, ptype, phe.propertyName);
+                        if ((val is bool b && b) || (val != null && !(val is bool)))
+                        {
+                            return phe.color;
+                        }
+                    }
+                }
+            }
+
+            return nameBackground;
+        }
 
         private static void HandleHierarchyWindowItemOnGUI(int instanceID, Rect selectionRect)
         {
@@ -122,23 +239,21 @@ namespace UnityHierarchyColor
             int[] propertyCounts;
             int[] propertyCountsOnSelf;
 
-            bool countsReady = cachedCounts.TryGetValue(instanceID, out counts);
-            bool countsSelfReady = cachedCountsOnSelf.TryGetValue(instanceID, out countsOnSelf);
-            bool propertyCountsReady = cachedPropertyCounts.TryGetValue(instanceID, out propertyCounts);
-            bool propertyCountsSelfReady = cachedPropertyCountsOnSelf.TryGetValue(instanceID, out propertyCountsOnSelf);
+            bool countsReady = typeCountContext.RecursiveCache.TryGetValue(instanceID, out counts);
+            bool countsSelfReady = typeCountContext.SelfCache.TryGetValue(instanceID, out countsOnSelf);
+            bool propertyCountsReady = propertyCountContext.RecursiveCache.TryGetValue(instanceID, out propertyCounts);
+            bool propertyCountsSelfReady = propertyCountContext.SelfCache.TryGetValue(instanceID, out propertyCountsOnSelf);
 
-            if (!countsReady && lockset(pendingCount, instanceID)) countsQueue.Enqueue(obj);
-            if (!countsSelfReady && lockset(pendingCountSelf, instanceID)) countsSelfQueue.Enqueue(obj);
+
+            EnsureCountsQueued(typeCountContext, instanceID, obj);
             if (propertyConfigs != null)
-            {
-                if (!propertyCountsReady && lockset(pendingPropertyCount, instanceID)) propertyCountsQueue.Enqueue(obj);
-                if (!propertyCountsSelfReady && lockset(pendingPropertyCountSelf, instanceID)) propertyCountsSelfQueue.Enqueue(obj);
-            }
+                EnsureCountsQueued(propertyCountContext, instanceID, obj);
+
             float nextX = selectionRect.xMax;
 
             List<(int typeIndex, Rect counterRect, bool isProperty)> counterRects = new();
 
-            Color nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
+            Color nameBackground;
             Color textColor = Color.white;
             Color disabledTextColor = new Color(0.4f, 0.4f, 0.4f);
 
@@ -157,84 +272,10 @@ namespace UnityHierarchyColor
                 }
             }
 
-            bool prefixHighlightFound = false;
             if (isMatchedByFilter)
-            {
-                if (nameHighlightConfigs != null && nameHighlightConfigs.Count > 0)
-                {
-                    foreach (var nh in nameHighlightConfigs)
-                    {
-                        if (string.IsNullOrEmpty(nh.prefix)) continue;
-                        bool match = nh.propagateUpwards ? NameOrChildHasPrefixRecursive(obj, nh.prefix) : obj.name.StartsWith(nh.prefix, StringComparison.Ordinal);
-                        if (match)
-                        {
-                            nameBackground = nh.color;
-                            prefixHighlightFound = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!prefixHighlightFound && typeConfigs != null)
-                {
-                    for (int i = 0; i < typeConfigs.Count; i++)
-                    {
-                        var tce = typeConfigs[i];
-                        if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
-                        Type type = GetCachedType(tce.typeName);
-                        if (type == null) continue;
-                        bool match = tce.propagateUpwards ? HasComponentInHierarchy(obj, type) : obj.GetComponent(type) != null;
-                        if (match)
-                        {
-                            nameBackground = tce.color;
-                            break;
-                        }
-                    }
-                }
-
-                if (!prefixHighlightFound && propertyConfigs != null && propertyConfigs.Count > 0)
-                {
-                    for (int i = 0; i < propertyConfigs.Count; i++)
-                    {
-                        var phe = propertyConfigs[i];
-                        if (phe == null || string.IsNullOrEmpty(phe.componentTypeName) || string.IsNullOrEmpty(phe.propertyName)) continue;
-                        Type ptype = propertyTypeCache.TryGetValue(phe.componentTypeName, out var foundType) ? foundType : null;
-                        if (ptype == null) continue;
-                        var comps = obj.GetComponents(ptype);
-                        foreach (var comp in comps)
-                        {
-                            var prop = ptype.GetProperty(phe.propertyName);
-                            if (prop != null)
-                            {
-                                object val = prop.GetValue(comp);
-                                if ((val is bool b && b) || (val != null && !(val is bool)))
-                                {
-                                    nameBackground = phe.color;
-                                    goto FoundPropertyHighlight;
-                                }
-                            }
-                            else
-                            {
-                                var field = ptype.GetField(phe.propertyName);
-                                if (field != null)
-                                {
-                                    object val = field.GetValue(comp);
-                                    if ((val is bool b && b) || (val != null && !(val is bool)))
-                                    {
-                                        nameBackground = phe.color;
-                                        goto FoundPropertyHighlight;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            FoundPropertyHighlight:;
-            }
+                nameBackground = GetBackgroundHighlightColor(obj, nameHighlightConfigs, typeConfigs, propertyConfigs);
             else
-            {
                 nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
-            }
 
             if (Selection.instanceIDs.Contains(instanceID))
                 nameBackground = new Color(0.24f, 0.48f, 0.90f, 1f);
@@ -366,60 +407,41 @@ namespace UnityHierarchyColor
         private static void EditorUpdate()
         {
             int batchCount = 6;
-            var typeConfigs = GetTypeConfigs();
-            int typeCount = typeConfigs?.Count ?? 0;
-            var propertyConfigs = GetPropertyHighlightConfigs();
-            int propertyTypeCount = propertyConfigs?.Count ?? 0;
-            if (typeCount == 0 && propertyTypeCount == 0)
+            var countContexts = new[] { typeCountContext, propertyCountContext };
+            bool hasAnyConfig = countContexts.Any(ctx => ctx.NumConfigs > 0);
+
+
+            if (!hasAnyConfig)
             {
                 ClearQueuesAndPending();
                 return;
             }
+            foreach (var ctx in countContexts)
+            {
+                if (ctx.NumConfigs == 0) continue;
 
-            for (int i = 0; i < batchCount && countsQueue.TryDequeue(out var obj); i++)
-            {
-                int id = obj?.GetInstanceID() ?? 0;
-                int[] counts = new int[typeCount];
-                if (obj != null) AccumulateCountsRecursiveSafe(obj.transform, counts);
-                cachedCounts[id] = counts;
-                lock (pendingCount) pendingCount.Remove(id);
-                OnCountsCacheUpdated?.Invoke(id);
-                EditorApplication.RepaintHierarchyWindow();
-            }
-
-            for (int i = 0; i < batchCount && countsSelfQueue.TryDequeue(out var obj); i++)
-            {
-                int id = obj?.GetInstanceID() ?? 0;
-                int[] counts = new int[typeCount];
-                if (obj != null) AccumulateCountSelfSafe(obj.transform, counts);
-                cachedCountsOnSelf[id] = counts;
-                lock (pendingCountSelf) pendingCountSelf.Remove(id);
-                OnCountsCacheUpdated?.Invoke(id);
-                EditorApplication.RepaintHierarchyWindow();
-            }
-
-            for (int i = 0; i < batchCount && propertyCountsQueue.TryDequeue(out var obj); i++)
-            {
-                int id = obj?.GetInstanceID() ?? 0;
-                int[] propertyCounts = new int[propertyTypeCount];
-                if (obj != null) AccumulatePropertyCountsRecursiveSafe(obj.transform, propertyCounts);
-                cachedPropertyCounts[id] = propertyCounts;
-                lock (pendingPropertyCount) pendingPropertyCount.Remove(id);
-                OnCountsCacheUpdated?.Invoke(id);
-                EditorApplication.RepaintHierarchyWindow();
-            }
-            for (int i = 0; i < batchCount && propertyCountsSelfQueue.TryDequeue(out var obj); i++)
-            {
-                int id = obj?.GetInstanceID() ?? 0;
-                int[] propertyCounts = new int[propertyTypeCount];
-                if (obj != null) AccumulatePropertyCountSelfSafe(obj.transform, propertyCounts);
-                cachedPropertyCountsOnSelf[id] = propertyCounts;
-                lock (pendingPropertyCountSelf) pendingPropertyCountSelf.Remove(id);
-                OnCountsCacheUpdated?.Invoke(id);
-                EditorApplication.RepaintHierarchyWindow();
+                for (int i = 0; i < batchCount && ctx.RecursiveQueue.TryDequeue(out var obj); i++)
+                {
+                    int id = obj?.GetInstanceID() ?? 0;
+                    int[] counts = new int[ctx.NumConfigs];
+                    ctx.RecursiveAccum?.Invoke(obj?.transform, counts);
+                    ctx.RecursiveCache[id] = counts;
+                    lock (ctx.PendingRecursive) ctx.PendingRecursive.Remove(id);
+                    OnCountsCacheUpdated?.Invoke(id);
+                    EditorApplication.RepaintHierarchyWindow();
+                }
+                for (int i = 0; i < batchCount && ctx.SelfQueue.TryDequeue(out var obj); i++)
+                {
+                    int id = obj?.GetInstanceID() ?? 0;
+                    int[] counts = new int[ctx.NumConfigs];
+                    ctx.SelfAccum?.Invoke(obj?.transform, counts);
+                    ctx.SelfCache[id] = counts;
+                    lock (ctx.PendingSelf) ctx.PendingSelf.Remove(id);
+                    OnCountsCacheUpdated?.Invoke(id);
+                    EditorApplication.RepaintHierarchyWindow();
+                }
             }
         }
-
         private static void AccumulateCountsRecursiveSafe(Transform obj, int[] counts)
         {
             try { if (obj != null) AccumulateCountsRecursive(obj, counts); }
@@ -443,14 +465,13 @@ namespace UnityHierarchyColor
 
         private static void ClearQueuesAndPending()
         {
-            while (countsQueue.TryDequeue(out _)) { }
-            while (countsSelfQueue.TryDequeue(out _)) { }
-            while (propertyCountsQueue.TryDequeue(out _)) { }
-            while (propertyCountsSelfQueue.TryDequeue(out _)) { }
-            lock (pendingCount) pendingCount.Clear();
-            lock (pendingCountSelf) pendingCountSelf.Clear();
-            lock (pendingPropertyCount) pendingPropertyCount.Clear();
-            lock (pendingPropertyCountSelf) pendingPropertyCountSelf.Clear();
+            foreach (var ctx in new[] { typeCountContext, propertyCountContext })
+            {
+                while (ctx.RecursiveQueue.TryDequeue(out _)) { }
+                while (ctx.SelfQueue.TryDequeue(out _)) { }
+                lock (ctx.PendingRecursive) ctx.PendingRecursive.Clear();
+                lock (ctx.PendingSelf) ctx.PendingSelf.Clear();
+            }
         }
 
         #region Utility
@@ -489,32 +510,34 @@ namespace UnityHierarchyColor
             return false;
         }
 
-        private static void AccumulateCountSelf(Transform obj, int[] counts)
+        private delegate object ValueExtractor(object component, Type type, string propertyName);
+
+        private static object GetComponentValue(object comp, Type t, string propertyName)
         {
-            var typeConfigs = GetTypeConfigs();
-            if (typeConfigs == null) return;
-            for (int i = 0; i < typeConfigs.Count; i++)
-            {
-                if (typeConfigs[i] == null || string.IsNullOrEmpty(typeConfigs[i].typeName)) continue;
-                Type t = GetCachedType(typeConfigs[i].typeName);
-                if (t != null)
-                    counts[i] += obj.GetComponents(t).Length;
-            }
+            var prop = t.GetProperty(propertyName);
+            if (prop != null) return prop.GetValue(comp);
+            var field = t.GetField(propertyName);
+            if (field != null) return field.GetValue(comp);
+            return null;
         }
-        private static void AccumulateCountsRecursive(Transform obj, int[] counts, int depth = 0)
+
+        private static void IncrementCountForValue(object val, int[] counts, int idx)
+        {
+            if (val is bool b && b) counts[idx]++;
+            else if (val != null && !(val is bool)) counts[idx]++;
+        }
+
+        private static void AccumulatePropertyCountsGeneric(
+            Transform obj,
+            int[] counts,
+            bool recursive,
+            int depth = 0)
         {
             if (depth > MaxDepth)
             {
-                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in AccumulateCountsRecursive. Possible circular reference detected.");
+                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in AccumulatePropertyCountsGeneric. Possible circular reference detected.");
                 return;
             }
-            AccumulateCountSelf(obj, counts);
-            for (int c = 0; c < obj.childCount; ++c)
-                AccumulateCountsRecursive(obj.GetChild(c), counts, depth + 1);
-        }
-
-        private static void AccumulatePropertyCountSelf(Transform obj, int[] counts)
-        {
             var propertyConfigs = GetPropertyHighlightConfigs();
             if (propertyConfigs == null) return;
             for (int i = 0; i < propertyConfigs.Count; i++)
@@ -526,39 +549,58 @@ namespace UnityHierarchyColor
                 {
                     foreach (var comp in obj.GetComponents(t))
                     {
-                        var prop = t.GetProperty(phe.propertyName);
-                        if (prop != null)
-                        {
-                            object val = prop.GetValue(comp);
-                            if (val is bool b && b) counts[i]++;
-                            else if (val != null && !(val is bool)) counts[i]++;
-                        }
-                        else
-                        {
-                            var field = t.GetField(phe.propertyName);
-                            if (field != null)
-                            {
-                                object val = field.GetValue(comp);
-                                if (val is bool b && b) counts[i]++;
-                                else if (val != null && !(val is bool)) counts[i]++;
-                            }
-                        }
+                        object val = GetComponentValue(comp, t, phe.propertyName);
+                        IncrementCountForValue(val, counts, i);
                     }
                 }
             }
+            if (recursive)
+            {
+                for (int c = 0; c < obj.childCount; ++c)
+                    AccumulatePropertyCountsGeneric(obj.GetChild(c), counts, recursive, depth + 1);
+            }
         }
-        private static void AccumulatePropertyCountsRecursive(Transform obj, int[] counts, int depth = 0)
+
+        private static void AccumulateTypeCountsGeneric(
+            Transform obj,
+            int[] counts,
+            bool recursive,
+            int depth = 0)
         {
             if (depth > MaxDepth)
             {
-                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in AccumulatePropertyCountsRecursive. Possible circular reference detected.");
+                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in AccumulateTypeCountsGeneric. Possible circular reference detected.");
                 return;
             }
-            AccumulatePropertyCountSelf(obj, counts);
-            for (int c = 0; c < obj.childCount; ++c)
-                AccumulatePropertyCountsRecursive(obj.GetChild(c), counts, depth + 1);
+            var typeConfigs = GetTypeConfigs();
+            if (typeConfigs == null) return;
+            for (int i = 0; i < typeConfigs.Count; i++)
+            {
+                if (typeConfigs[i] == null || string.IsNullOrEmpty(typeConfigs[i].typeName)) continue;
+                Type t = GetCachedType(typeConfigs[i].typeName);
+                if (t != null)
+                {
+                    var num = obj.GetComponents(t).Length;
+                    counts[i] += num;
+                }
+            }
+            if (recursive)
+            {
+                for (int c = 0; c < obj.childCount; ++c)
+                    AccumulateTypeCountsGeneric(obj.GetChild(c), counts, recursive, depth + 1);
+            }
         }
+        private static void AccumulateCountSelf(Transform obj, int[] counts)
+            => AccumulateTypeCountsGeneric(obj, counts, false);
+        private static void AccumulateCountsRecursive(Transform obj, int[] counts, int depth = 0)
+            => AccumulateTypeCountsGeneric(obj, counts, true, depth);
+        private static void AccumulatePropertyCountSelf(Transform obj, int[] counts)
+            => AccumulatePropertyCountsGeneric(obj, counts, false);
+        private static void AccumulatePropertyCountsRecursive(Transform obj, int[] counts, int depth = 0)
+            => AccumulatePropertyCountsGeneric(obj, counts, true, depth);
 
         #endregion
     }
 }
+
+
