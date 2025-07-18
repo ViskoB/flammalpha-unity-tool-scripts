@@ -30,6 +30,13 @@ Useful scripts I use to enhance my Unity experience.
 - Works in scenes and with prefab assets.
 - Undos supported for scene merges.
 
+### Material Instance Fix (`Unity-Material-Instance-Fix`)
+- Scan for and revert unwanted material instances on selected GameObjects (e.g., imported FBX meshes) by matching them to project asset materials.
+- Create unique (instanced) material copies from asset materials for selected objects.
+- Batch operation UI with expand/collapse/select, undo/redo, and color-coded issue display.
+- Menu: `Tools > FlammAlpha > Revert Material Instances`
+
 ---
 
 Each folder above may contain a more detailed `README.md` that describes its specific features, limitations, and usage in depth. For details and advanced usage, check those files!
+
