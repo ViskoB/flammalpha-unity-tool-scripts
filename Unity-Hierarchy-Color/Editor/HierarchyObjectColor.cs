@@ -21,7 +21,6 @@ namespace UnityHierarchyColor
         private static readonly Dictionary<string, Type> typeCache = new();
         private static readonly Dictionary<string, Type> propertyTypeCache = new();
 
-        // Use modular CountContexts for all caching and queueing of type/property highlight counts
         private static readonly CountContext typeCountContext = new(
             new ConcurrentDictionary<int, int[]>(),
             new ConcurrentDictionary<int, int[]>(),
@@ -170,7 +169,6 @@ namespace UnityHierarchyColor
         {
             Color nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
 
-            // Name prefix highlighting
             if (nameHighlightConfigs != null && nameHighlightConfigs.Count > 0)
             {
                 foreach (var nh in nameHighlightConfigs)
@@ -184,7 +182,6 @@ namespace UnityHierarchyColor
                 }
             }
 
-            // Type highlighting
             if (typeConfigs != null)
             {
                 for (int i = 0; i < typeConfigs.Count; i++)
@@ -201,7 +198,6 @@ namespace UnityHierarchyColor
                 }
             }
 
-            // Property highlighting
             if (propertyConfigs != null && propertyConfigs.Count > 0)
             {
                 for (int i = 0; i < propertyConfigs.Count; i++)
@@ -244,7 +240,6 @@ namespace UnityHierarchyColor
             bool propertyCountsReady = propertyCountContext.RecursiveCache.TryGetValue(instanceID, out propertyCounts);
             bool propertyCountsSelfReady = propertyCountContext.SelfCache.TryGetValue(instanceID, out propertyCountsOnSelf);
 
-
             EnsureCountsQueued(typeCountContext, instanceID, obj);
             if (propertyConfigs != null)
                 EnsureCountsQueued(propertyCountContext, instanceID, obj);
@@ -270,6 +265,37 @@ namespace UnityHierarchyColor
                     else
                         isMatchedByFilter = false;
                 }
+                else if (propertyConfigs != null && filteredTypeIndex >= (typeConfigs?.Count ?? 0))
+                {
+                    int pIdx = filteredTypeIndex - (typeConfigs?.Count ?? 0);
+                    if (pIdx < propertyConfigs.Count)
+                    {
+                        var phe = propertyConfigs[pIdx];
+                        Type ptype = propertyTypeCache.TryGetValue(phe.componentTypeName, out var foundType) ? foundType : null;
+                        if (ptype != null && obj.GetComponent(ptype) != null)
+                        {
+                            bool match = false;
+                            var comps = obj.GetComponents(ptype);
+                            foreach (var comp in comps)
+                            {
+                                object val = GetComponentValue(comp, ptype, phe.propertyName);
+                                if ((val is bool b && b) || (val != null && !(val is bool)))
+                                {
+                                    match = true; break;
+                                }
+                            }
+                            if (match)
+                                objectFilterIndex = filteredTypeIndex;
+                            else
+                                isMatchedByFilter = false;
+                        }
+                        else
+                        {
+                            isMatchedByFilter = false;
+                        }
+                    }
+                    else isMatchedByFilter = false;
+                }
             }
 
             if (isMatchedByFilter)
@@ -278,9 +304,17 @@ namespace UnityHierarchyColor
                 nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
 
             if (Selection.instanceIDs.Contains(instanceID))
-                nameBackground = new Color(0.24f, 0.48f, 0.90f, 1f);
+            {
+                Color baseColor = nameBackground;
+                Color blue = EditorGUIUtility.isProSkin ? new Color(0.17f, 0.32f, 0.78f, 1f) : new Color(0.18f, 0.44f, 1f, 1f);
+                nameBackground = Color.Lerp(baseColor, blue, 0.6f);
+            }
             else if (selectionRect.Contains(Event.current.mousePosition) && Event.current.type == EventType.Repaint)
-                nameBackground = new Color(1f, 1f, 1f, 0.07f);
+            {
+                Color baseColor = nameBackground;
+                Color lightColor = Color.Lerp(baseColor, Color.white, EditorGUIUtility.isProSkin ? 0.14f : 0.09f);
+                nameBackground = lightColor;
+            }
 
             GUIStyle countStyle = new(EditorStyles.label)
             {
@@ -305,8 +339,23 @@ namespace UnityHierarchyColor
                         nextX -= labelWidth + 2f;
                         Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
 
-                        counterRects.Add((i, countRect, true));
+                        // Property rects now carry distinct indexes
+                        int filterIdx = i + (typeConfigs?.Count ?? 0);
+                        counterRects.Add((filterIdx, countRect, true));
                         EditorGUI.DrawRect(countRect, propertyConfigs[i].color);
+
+                        // HIGHLIGHT: Draw yellow border if this is the current property filter
+                        if (filteredTypeIndex == filterIdx)
+                        {
+                            Handles.color = Color.yellow;
+                            Handles.DrawAAPolyLine(3,
+                                new Vector3(countRect.x, countRect.y),
+                                new Vector3(countRect.xMax, countRect.y),
+                                new Vector3(countRect.xMax, countRect.yMax),
+                                new Vector3(countRect.x, countRect.yMax),
+                                new Vector3(countRect.x, countRect.y)
+                            );
+                        }
 
                         EditorGUI.LabelField(countRect, new GUIContent(label,
                             $"{propertyConfigs[i].componentTypeName}.{propertyConfigs[i].propertyName}"), countStyle);
@@ -326,7 +375,6 @@ namespace UnityHierarchyColor
 
                         counterRects.Add((i, countRect, false));
                         EditorGUI.DrawRect(countRect, typeConfigs[i].color);
-
                         if (filteredTypeIndex == i)
                         {
                             Handles.color = Color.yellow;
@@ -367,11 +415,8 @@ namespace UnityHierarchyColor
                 {
                     if (rect.Contains(Event.current.mousePosition))
                     {
-                        if (!isProperty)
-                        {
-                            if (filteredTypeIndex == typeIdx) filteredTypeIndex = -1;
-                            else filteredTypeIndex = typeIdx;
-                        }
+                        if (filteredTypeIndex == typeIdx) filteredTypeIndex = -1;
+                        else filteredTypeIndex = typeIdx;
                         EditorApplication.RepaintHierarchyWindow();
                         Event.current.Use();
                         break;
@@ -409,7 +454,6 @@ namespace UnityHierarchyColor
             int batchCount = 6;
             var countContexts = new[] { typeCountContext, propertyCountContext };
             bool hasAnyConfig = countContexts.Any(ctx => ctx.NumConfigs > 0);
-
 
             if (!hasAnyConfig)
             {
@@ -520,11 +564,13 @@ namespace UnityHierarchyColor
             if (field != null) return field.GetValue(comp);
             return null;
         }
-
         private static void IncrementCountForValue(object val, int[] counts, int idx)
         {
-            if (val is bool b && b) counts[idx]++;
-            else if (val != null && !(val is bool)) counts[idx]++;
+            if (val is System.Collections.ICollection collection)
+            {
+                counts[idx] += collection.Count;
+            }
+            // fallback: if it's null, do nothing
         }
 
         private static void AccumulatePropertyCountsGeneric(
@@ -560,7 +606,6 @@ namespace UnityHierarchyColor
                     AccumulatePropertyCountsGeneric(obj.GetChild(c), counts, recursive, depth + 1);
             }
         }
-
         private static void AccumulateTypeCountsGeneric(
             Transform obj,
             int[] counts,
@@ -602,5 +647,3 @@ namespace UnityHierarchyColor
         #endregion
     }
 }
-
-
