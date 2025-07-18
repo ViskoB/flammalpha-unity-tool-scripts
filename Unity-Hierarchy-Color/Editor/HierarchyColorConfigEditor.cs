@@ -170,18 +170,21 @@ namespace UnityHierarchyColor
         private void DrawTypeConfigElement(Rect rect, int index, bool active, bool focused)
         {
             float margin = 5;
-            float wRemove = 25, wColor = 80, wSymbol = 40, wChange = 70, wType = 120, wPropagate = 90;
+            float wRemove = 25, wColor = 80, wSymbol = 40, wChange = 70, wType = 120, wPropagate = 90, wEnable = 20;
             float xMax = rect.xMax, y = rect.y + 2;
             float xRemove = xMax - wRemove;
             float xPropagate = xRemove - margin - wPropagate;
             float xColor = xPropagate - margin - wColor;
             float xSymbol = xColor - margin - wSymbol;
-            float xType = rect.x;
+            float xType = rect.x + wEnable + margin;
             float xChange = xType + wType + margin;
+            float xEnable = rect.x;
 
             if (config.typeConfigs == null || index < 0 || index >= config.typeConfigs.Count) return;
             var entry = config.typeConfigs[index];
             Type selectedType = GetTypeFromString(entry.typeName);
+
+            entry.enabled = EditorGUI.Toggle(new Rect(xEnable, y, wEnable, EditorGUIUtility.singleLineHeight), entry.enabled);
 
             if (selectedType != null)
             {
@@ -247,15 +250,17 @@ namespace UnityHierarchyColor
         private void DrawNameHighlightElement(Rect rect, int index, bool active, bool focused)
         {
             float margin = 5;
-            float wColor = 80, wRemove = 25, wPropagate = 90;
+            float wColor = 80, wRemove = 25, wPropagate = 90, wEnable = 20;
             float xMax = rect.xMax, y = rect.y + 2;
             float xRemove = xMax - wRemove;
             float xPropagate = xRemove - margin - wPropagate;
             float xColor = xPropagate - margin - wColor;
-            float xPrefix = rect.x;
+            float xPrefix = rect.x + wEnable + margin;
+            float xEnable = rect.x;
 
             if (config.nameHighlightConfigs == null || index < 0 || index >= config.nameHighlightConfigs.Count) return;
             var entry = config.nameHighlightConfigs[index];
+            entry.enabled = EditorGUI.Toggle(new Rect(xEnable, y, wEnable, EditorGUIUtility.singleLineHeight), entry.enabled);
             entry.prefix = EditorGUI.TextField(
                 new Rect(xPrefix, y, xColor - xPrefix - margin, EditorGUIUtility.singleLineHeight),
                 entry.prefix);
@@ -300,7 +305,7 @@ namespace UnityHierarchyColor
         private void DrawPropertyHighlightElement(Rect rect, int index, bool isActive, bool isFocused)
         {
             float margin = 5;
-            float wRemove = 25, wColor = 80, wSymbol = 40, wPropagate = 90;
+            float wRemove = 25, wColor = 80, wSymbol = 40, wPropagate = 90, wEnable = 20;
             float wComponent = 120, wProperty = 100, wChange = 70;
             float y = rect.y + 2;
             float x = rect.x;
@@ -311,10 +316,12 @@ namespace UnityHierarchyColor
             float xColor = xPropagate - margin - wColor;
             float xSymbol = xColor - margin - wSymbol;
             float xProperty = xSymbol - margin - wProperty;
-            float xComponent = x;
+            float xComponent = x + wEnable + margin;
+            float xEnable = x;
 
             if (config.propertyHighlightConfigs == null || index < 0 || index >= config.propertyHighlightConfigs.Count) return;
             var entry = config.propertyHighlightConfigs[index];
+            entry.enabled = EditorGUI.Toggle(new Rect(xEnable, y, wEnable, EditorGUIUtility.singleLineHeight), entry.enabled);
             Type componentType = GetTypeFromString(entry.componentTypeName);
             if (componentType != null)
             {

@@ -165,7 +165,12 @@ namespace UnityHierarchyColor
             }
         }
 
-        private static Color GetBackgroundHighlightColor(GameObject obj, List<NameHighlightEntry> nameHighlightConfigs, List<TypeConfigEntry> typeConfigs, List<PropertyHighlightEntry> propertyConfigs)
+        private static Color GetBackgroundHighlightColor(
+            GameObject obj,
+            List<NameHighlightEntry> nameHighlightConfigs,
+            List<TypeConfigEntry> typeConfigs,
+            List<PropertyHighlightEntry> propertyConfigs
+        )
         {
             Color nameBackground = EditorGUIUtility.isProSkin ? new Color(0.21f, 0.21f, 0.21f, 1) : Color.white;
 
@@ -173,6 +178,7 @@ namespace UnityHierarchyColor
             {
                 foreach (var nh in nameHighlightConfigs)
                 {
+                    if (!nh.enabled) continue;
                     if (string.IsNullOrEmpty(nh.prefix)) continue;
                     bool match = nh.propagateUpwards ? NameOrChildHasPrefixRecursive(obj, nh.prefix) : obj.name.StartsWith(nh.prefix, StringComparison.Ordinal);
                     if (match)
@@ -187,7 +193,7 @@ namespace UnityHierarchyColor
                 for (int i = 0; i < typeConfigs.Count; i++)
                 {
                     var tce = typeConfigs[i];
-                    if (tce == null || string.IsNullOrEmpty(tce.typeName)) continue;
+                    if (tce == null || !tce.enabled || string.IsNullOrEmpty(tce.typeName)) continue;
                     Type type = GetCachedType(tce.typeName);
                     if (type == null) continue;
                     bool match = tce.propagateUpwards ? HasComponentInHierarchy(obj, type) : obj.GetComponent(type) != null;
@@ -203,7 +209,7 @@ namespace UnityHierarchyColor
                 for (int i = 0; i < propertyConfigs.Count; i++)
                 {
                     var phe = propertyConfigs[i];
-                    if (phe == null || string.IsNullOrEmpty(phe.componentTypeName) || string.IsNullOrEmpty(phe.propertyName)) continue;
+                    if (phe == null || !phe.enabled || string.IsNullOrEmpty(phe.componentTypeName) || string.IsNullOrEmpty(phe.propertyName)) continue;
                     Type ptype = propertyTypeCache.TryGetValue(phe.componentTypeName, out var foundType) ? foundType : null;
                     if (ptype == null) continue;
                     var comps = obj.GetComponents(ptype);
@@ -339,12 +345,10 @@ namespace UnityHierarchyColor
                         nextX -= labelWidth + 2f;
                         Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
 
-                        // Property rects now carry distinct indexes
                         int filterIdx = i + (typeConfigs?.Count ?? 0);
                         counterRects.Add((filterIdx, countRect, true));
                         EditorGUI.DrawRect(countRect, propertyConfigs[i].color);
 
-                        // HIGHLIGHT: Draw yellow border if this is the current property filter
                         if (filteredTypeIndex == filterIdx)
                         {
                             Handles.color = Color.yellow;
@@ -589,7 +593,7 @@ namespace UnityHierarchyColor
             for (int i = 0; i < propertyConfigs.Count; i++)
             {
                 var phe = propertyConfigs[i];
-                if (phe == null || string.IsNullOrEmpty(phe.componentTypeName) || string.IsNullOrEmpty(phe.propertyName)) continue;
+                if (phe == null || !phe.enabled || string.IsNullOrEmpty(phe.componentTypeName) || string.IsNullOrEmpty(phe.propertyName)) continue;
                 Type t = propertyTypeCache.TryGetValue(phe.componentTypeName, out var ptype) ? ptype : null;
                 if (t != null)
                 {
@@ -621,7 +625,7 @@ namespace UnityHierarchyColor
             if (typeConfigs == null) return;
             for (int i = 0; i < typeConfigs.Count; i++)
             {
-                if (typeConfigs[i] == null || string.IsNullOrEmpty(typeConfigs[i].typeName)) continue;
+                if (typeConfigs[i] == null || !typeConfigs[i].enabled || string.IsNullOrEmpty(typeConfigs[i].typeName)) continue;
                 Type t = GetCachedType(typeConfigs[i].typeName);
                 if (t != null)
                 {
@@ -647,3 +651,4 @@ namespace UnityHierarchyColor
         #endregion
     }
 }
+
