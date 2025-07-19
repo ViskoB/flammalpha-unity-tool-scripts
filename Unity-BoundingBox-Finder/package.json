@@ -1,0 +1,15 @@
+{
+  "name": "com.flammalpha.unity-boundingbox-finder",
+  "displayName": "Unity Bounding Box Finder",
+  "version": "0.1.0",
+  "description": "A Unity Editor tool for visualizing and editing bounding boxes of SkinnedMeshRenderers. Provides an intuitive interface to adjust local bounds with real-time scene view visualization and gizmo integration.",
+  "unity": "2022.3.6f1",
+  "author": {
+    "name": "FlammAlpha"
+  },
+  "legacyFolders": {
+  },
+  "legacyFiles": {
+  },
+  "hideInEditor": false
+}

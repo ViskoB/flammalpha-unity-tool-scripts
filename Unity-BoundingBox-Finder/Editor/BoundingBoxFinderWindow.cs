@@ -3,18 +3,11 @@ using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
 
-/// <summary>
-/// EditorWindow that lists all bounding boxes of SkinnedMeshRenderers in the selected GameObject/FBX/Prefab.
-/// Also draws bounding boxes as gizmos in the Scene view, with hover-highlight and click-to-select.
-/// Now highlights the selected box with green color in scene and selection.
-/// </summary>
+
 public class BoundingBoxFinderWindow : EditorWindow
 {
     private GameObject targetRoot;
     private Vector2 scrollPosition;
-
-    private Dictionary<GameObject, Vector3> lastCenterValues = new();
-    private Dictionary<GameObject, Vector3> lastSizeValues = new();
 
     private readonly List<RendererBoundsInfo> skinnedMeshRendererBoundsList = new();
     private static readonly List<RendererBoundsInfo> _currentBoundingBoxes = new();
@@ -23,8 +16,6 @@ public class BoundingBoxFinderWindow : EditorWindow
     private static int _selectedBoxIdx = -1;
     private static bool _gizmosEnabled = true;
     private static bool _blockScenePicking = true;
-
-    private int _hoveredGUIIdx = -1;
 
     [MenuItem("Tools/FlammAlpha/Bounding Box Finder")]
     public static void ShowWindow()
@@ -48,8 +39,6 @@ public class BoundingBoxFinderWindow : EditorWindow
     {
         skinnedMeshRendererBoundsList.Clear();
         _currentBoundingBoxes.Clear();
-        lastCenterValues.Clear();
-        lastSizeValues.Clear();
         if (targetRoot == null)
         {
             _drawGizmos = false;
@@ -72,8 +61,6 @@ public class BoundingBoxFinderWindow : EditorWindow
         {
             skinnedMeshRendererBoundsList.Add(info);
             _currentBoundingBoxes.Add(info);
-            lastCenterValues[info.GameObject] = info.Bounds.center;
-            lastSizeValues[info.GameObject] = info.Bounds.size;
         }
         _drawGizmos = skinnedMeshRendererBoundsList.Count > 0;
         SceneView.RepaintAll();
@@ -225,44 +212,6 @@ public class BoundingBoxFinderWindow : EditorWindow
         return Vector3.Distance(pointOnRay, pointOnSeg);
     }
 
-    private static bool RayIntersectsBounds(Ray ray, Bounds bounds, out float tHit)
-    {
-        tHit = 0f;
-        if (bounds.Contains(ray.origin))
-        {
-            tHit = 0f;
-            return true;
-        }
-        Vector3 min = bounds.min;
-        Vector3 max = bounds.max;
-        Vector3 origin = ray.origin;
-        Vector3 dir = ray.direction;
-
-        float tmin = (min.x - origin.x) / (dir.x != 0 ? dir.x : 1e-8f);
-        float tmax = (max.x - origin.x) / (dir.x != 0 ? dir.x : 1e-8f);
-        if (tmin > tmax) (tmin, tmax) = (tmax, tmin);
-        float tymin = (min.y - origin.y) / (dir.y != 0 ? dir.y : 1e-8f);
-        float tymax = (max.y - origin.y) / (dir.y != 0 ? dir.y : 1e-8f);
-        if (tymin > tymax) (tymin, tymax) = (tymax, tymin);
-        if ((tmin > tymax) || (tymin > tmax))
-            return false;
-        if (tymin > tmin)
-            tmin = tymin;
-        if (tymax < tmax)
-            tmax = tymax;
-        float tzmin = (min.z - origin.z) / (dir.z != 0 ? dir.z : 1e-8f);
-        float tzmax = (max.z - origin.z) / (dir.z != 0 ? dir.z : 1e-8f);
-        if (tzmin > tzmax) (tzmin, tzmax) = (tzmax, tzmin);
-        if ((tmin > tzmax) || (tzmin > tmax))
-            return false;
-        if (tzmin > tmin)
-            tmin = tzmin;
-        if (tzmax < tmax)
-            tmax = tzmax;
-        tHit = tmin > 0 ? tmin : tmax;
-        return tmax >= 0;
-    }
-
     private static Vector3[] GetBoxCorners(Bounds bounds)
     {
         Vector3 center = bounds.center;
@@ -333,32 +282,35 @@ public class BoundingBoxFinderWindow : EditorWindow
             EditorGUILayout.HelpBox("No SkinnedMeshRenderers found in selected GameObject.", MessageType.Info);
             return;
         }
-        EditorGUILayout.HelpBox("SkinnedMeshRenderer uses local bounds (as shown in Inspector). Edit below.", MessageType.Info);
+        
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-
-        _hoveredGUIIdx = -1;
 
         for (int i = 0; i < skinnedMeshRendererBoundsList.Count; i++)
         {
             var info = skinnedMeshRendererBoundsList[i];
 
             Color originalColor = GUI.backgroundColor;
+            Color backgroundColor;
 
             if (i == _selectedBoxIdx)
-                GUI.backgroundColor = new Color(0.85f, 1.0f, 0.85f);
+                backgroundColor = new Color(0.1f, 0.3f, 0.1f);
             else if (i % 2 == 1)
-                GUI.backgroundColor = new Color(0.90f, 0.94f, 1.0f);
+                backgroundColor = new Color(0.15f, 0.15f, 0.15f);
             else
-                GUI.backgroundColor = Color.white;
+                backgroundColor = new Color(0.25f, 0.25f, 0.25f);
 
-            EditorGUILayout.BeginVertical(GUI.skin.box);
+            GUI.backgroundColor = backgroundColor;
+
+            // Create a custom style that preserves the background color
+            GUIStyle boxStyle = new GUIStyle(GUI.skin.box);
+            boxStyle.normal.background = EditorGUIUtility.whiteTexture;
+            
+            EditorGUILayout.BeginVertical(boxStyle);
 
             GUIStyle labelStyle =
                 (i == _selectedBoxIdx)
                 ? new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.green } }
-                : (i == _hoveredGUIIdx)
-                    ? new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.cyan } }
-                    : EditorStyles.boldLabel;
+                : EditorStyles.boldLabel;
 
             string breadcrumb = GetBreadcrumbPathRelative(targetRoot, info.GameObject);
             if (string.IsNullOrEmpty(breadcrumb))
@@ -369,31 +321,16 @@ public class BoundingBoxFinderWindow : EditorWindow
             if (GUILayout.Button(new GUIContent(displayBreadcrumb, breadcrumb), labelStyle))
                 Selection.activeGameObject = info.GameObject;
 
-            Rect boxRect = GUILayoutUtility.GetLastRect();
-            bool isHovering = boxRect.Contains(Event.current.mousePosition);
-            if (isHovering && _hoveredGUIIdx != i)
-            {
-                _hoveredGUIIdx = i;
-                Repaint();
-            }
-            if (!isHovering && _hoveredGUIIdx == i)
-            {
-                _hoveredGUIIdx = -1;
-                Repaint();
-            }
-
-            lastCenterValues.TryGetValue(info.GameObject, out Vector3 currentCenter);
-            lastSizeValues.TryGetValue(info.GameObject, out Vector3 currentSize);
             var skinnedRenderer = info.GameObject.GetComponent<SkinnedMeshRenderer>();
             if (skinnedRenderer != null)
             {
                 EditorGUI.BeginChangeCheck();
-                Vector3 newLocalCenter = EditorGUILayout.Vector3Field("Local Center", skinnedRenderer.localBounds.center);
-                Vector3 newLocalSize = EditorGUILayout.Vector3Field("Local Size", skinnedRenderer.localBounds.size);
+                Vector3 newLocalCenter = EditorGUILayout.Vector3Field("Center", skinnedRenderer.localBounds.center);
+                Vector3 newLocalExtents = EditorGUILayout.Vector3Field("Extents", skinnedRenderer.localBounds.extents);
                 if (EditorGUI.EndChangeCheck())
                 {
                     Undo.RecordObject(skinnedRenderer, "Change SkinnedMeshRenderer Bounds");
-                    skinnedRenderer.localBounds = new Bounds(newLocalCenter, newLocalSize);
+                    skinnedRenderer.localBounds = new Bounds(newLocalCenter, newLocalExtents * 2f);
                     UpdateSkinnedMeshRendererBoundsList();
                     EditorGUILayout.EndVertical();
                     GUI.backgroundColor = originalColor;
