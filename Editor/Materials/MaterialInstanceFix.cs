@@ -12,13 +12,6 @@ namespace FlammAlpha.UnityTools.Materials
     /// </summary>
     public class MaterialInstanceFix : EditorWindow
     {
-        public enum Mode
-        {
-            RevertInstances,
-            CreateInstances
-        }
-
-        private Mode mode = Mode.RevertInstances;
         private Object targetRoot;
         private List<InstanceIssue> issues = new List<InstanceIssue>();
         private Vector2 scroll;
@@ -27,6 +20,15 @@ namespace FlammAlpha.UnityTools.Materials
         static void ShowWindow()
         {
             GetWindow<MaterialInstanceFix>("Material Instance Tools");
+        }
+
+        private void OnEnable()
+        {
+            // Auto-scan when window first opens if we have a target
+            if (targetRoot != null && targetRoot is GameObject go)
+            {
+                ScanMaterialInstances(go);
+            }
         }
 
         /// <summary>
@@ -47,23 +49,27 @@ namespace FlammAlpha.UnityTools.Materials
             EditorGUILayout.LabelField("Material Instance Tools", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Mode:", GUILayout.Width(40));
-            mode = (Mode)EditorGUILayout.EnumPopup(mode, GUILayout.Width(160));
-            EditorGUILayout.EndHorizontal();
-
             EditorGUILayout.LabelField("Select the root GameObject (Prefab instance, FBX, etc.):");
+            EditorGUI.BeginChangeCheck();
             targetRoot = EditorGUILayout.ObjectField(targetRoot, typeof(GameObject), true);
+            bool targetChanged = EditorGUI.EndChangeCheck();
 
-            string scanBtn = (mode == Mode.RevertInstances) ? "Scan for Material Instances" : "Scan for Asset Materials";
-            if (GUILayout.Button(scanBtn))
+            // Auto-refresh when target root changes
+            if (targetChanged && targetRoot != null && targetRoot is GameObject go)
             {
-                if (targetRoot != null && targetRoot is GameObject go)
+                ScanMaterialInstances(go);
+            }
+            else if (targetChanged && targetRoot == null)
+            {
+                issues.Clear();
+            }
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("Manual Refresh (Scan for Material Instances)"))
+            {
+                if (targetRoot != null && targetRoot is GameObject gameObject)
                 {
-                    if (mode == Mode.RevertInstances)
-                        ScanMaterialInstances(go);
-                    else
-                        ScanAssetMaterials(go);
+                    ScanMaterialInstances(gameObject);
                 }
                 else
                 {
@@ -71,13 +77,24 @@ namespace FlammAlpha.UnityTools.Materials
                 }
             }
 
+            // Small debug button for creating instances
+            if (GUILayout.Button("Debug: Create Instances", GUILayout.Width(150)))
+            {
+                if (targetRoot != null && targetRoot is GameObject debugGO)
+                {
+                    CreateInstancesForAssetMaterials(debugGO);
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("Error", "Please select a valid GameObject.", "OK");
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
             if (issues.Count > 0)
             {
                 EditorGUILayout.Space();
-                EditorGUILayout.LabelField(
-                    mode == Mode.RevertInstances ? "Found Material Instances:" : "Found Asset Materials:",
-                    EditorStyles.boldLabel
-                );
+                EditorGUILayout.LabelField("Found Material Instances:", EditorStyles.boldLabel);
 
                 DrawControlButtons();
                 DrawIssuesList();
@@ -145,34 +162,55 @@ namespace FlammAlpha.UnityTools.Materials
                 EditorGUILayout.LabelField($"Slot: {issue.slot}");
             }
 
-            if (mode == Mode.RevertInstances)
+            EditorGUILayout.ObjectField("Instance Material", issue.instance, typeof(Material), false);
+            EditorGUILayout.ObjectField("Replacement Asset", issue.assetCandidate, typeof(Material), false);
+            if (!hasCandidate)
             {
-                EditorGUILayout.ObjectField("Instance Material", issue.instance, typeof(Material), false);
-                EditorGUILayout.ObjectField("Replacement Asset", issue.assetCandidate, typeof(Material), false);
-                if (!hasCandidate)
-                {
-                    GUIStyle redLabel = new GUIStyle(EditorStyles.boldLabel);
-                    redLabel.normal.textColor = Color.red;
-                    EditorGUILayout.LabelField("No suitable replacement asset found!", redLabel);
-                }
-            }
-            else
-            {
-                EditorGUILayout.ObjectField("Asset Material", issue.assetCandidate, typeof(Material), false);
+                GUIStyle redLabel = new GUIStyle(EditorStyles.boldLabel);
+                redLabel.normal.textColor = Color.red;
+                EditorGUILayout.LabelField("No suitable replacement asset found!", redLabel);
             }
         }
 
         private void DrawActionButton()
         {
-            string actionBtn = (mode == Mode.RevertInstances)
-                ? "Revert All Listed Material Instances"
-                : "Instance All Listed Asset Materials";
-            if (GUILayout.Button(actionBtn))
+            if (GUILayout.Button("Revert All Listed Material Instances"))
             {
-                if (mode == Mode.RevertInstances)
-                    RevertScannedMaterials();
-                else
-                    InstanceAssetMaterials();
+                RevertScannedMaterials();
+            }
+        }
+
+        /// <summary>
+        /// Creates material instances for asset materials (debug function).
+        /// </summary>
+        /// <param name="root">Root GameObject to scan</param>
+        private void CreateInstancesForAssetMaterials(GameObject root)
+        {
+            int createdCount = 0;
+            foreach (var mr in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var mats = mr.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var m = mats[i];
+                    if (m != null && AssetDatabase.Contains(m))
+                    {
+                        Material inst = Object.Instantiate(m);
+                        inst.name = m.name + " (Instance)";
+                        mats[i] = inst;
+                        Undo.RecordObject(mr, "Create Material Instance");
+                        mr.sharedMaterials = mats;
+                        EditorUtility.SetDirty(mr);
+                        createdCount++;
+                    }
+                }
+            }
+            EditorUtility.DisplayDialog("Debug", $"Created {createdCount} material instances.", "Close");
+
+            // Refresh the scan after creating instances
+            if (targetRoot != null && targetRoot is GameObject go)
+            {
+                ScanMaterialInstances(go);
             }
         }
 
@@ -203,43 +241,6 @@ namespace FlammAlpha.UnityTools.Materials
                     {
                         var candidate = FindBestMaterialMatch(m, allMaterials);
                         issues.Add(new InstanceIssue { renderer = mr, slot = i, instance = m, assetCandidate = candidate });
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Scans for asset materials in the given GameObject hierarchy.
-        /// </summary>
-        /// <param name="root">Root GameObject to scan</param>
-        private void ScanAssetMaterials(GameObject root)
-        {
-            issues.Clear();
-            var matGuids = AssetDatabase.FindAssets("t:Material");
-            HashSet<Material> assetMaterials = new HashSet<Material>();
-
-            foreach (var guid in matGuids)
-            {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-                assetMaterials.Add(mat);
-            }
-
-            foreach (var mr in root.GetComponentsInChildren<Renderer>(true))
-            {
-                var mats = mr.sharedMaterials;
-                for (int i = 0; i < mats.Length; i++)
-                {
-                    var m = mats[i];
-                    if (m != null && AssetDatabase.Contains(m))
-                    {
-                        issues.Add(new InstanceIssue
-                        {
-                            renderer = mr,
-                            slot = i,
-                            instance = null,
-                            assetCandidate = m
-                        });
                     }
                 }
             }
@@ -306,33 +307,6 @@ namespace FlammAlpha.UnityTools.Materials
                 }
             }
             EditorUtility.DisplayDialog("Finished", $"Reverted {fixedCount} material assignments.", "Close");
-            issues.Clear();
-        }
-
-        /// <summary>
-        /// Creates material instances from selected asset materials.
-        /// </summary>
-        private void InstanceAssetMaterials()
-        {
-            int createdCount = 0;
-            foreach (var issue in issues)
-            {
-                if (issue.selected && issue.assetCandidate != null)
-                {
-                    var mats = issue.renderer.sharedMaterials;
-                    if (mats[issue.slot] == issue.assetCandidate)
-                    {
-                        Material inst = Object.Instantiate(issue.assetCandidate);
-                        inst.name = issue.assetCandidate.name + " (Instance)";
-                        mats[issue.slot] = inst;
-                        Undo.RecordObject(issue.renderer, "Create Material Instance");
-                        issue.renderer.sharedMaterials = mats;
-                        EditorUtility.SetDirty(issue.renderer);
-                        createdCount++;
-                    }
-                }
-            }
-            EditorUtility.DisplayDialog("Finished", $"Created {createdCount} material instances.", "Close");
             issues.Clear();
         }
     }
