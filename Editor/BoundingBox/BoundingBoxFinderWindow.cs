@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
+using FlammAlpha.UnityTools.Common;
 
 namespace FlammAlpha.UnityTools.BoundingBox
 {
@@ -12,6 +13,7 @@ namespace FlammAlpha.UnityTools.BoundingBox
     {
         private GameObject targetRoot;
         private Vector2 scrollPosition;
+        private bool scrollToSelected = false;
 
         private readonly List<RendererBoundsInfo> skinnedMeshRendererBoundsList = new();
         private static readonly List<RendererBoundsInfo> _currentBoundingBoxes = new();
@@ -90,6 +92,7 @@ namespace FlammAlpha.UnityTools.BoundingBox
 
         private void OnSelectionChanged()
         {
+            int previousSelectedIdx = _selectedBoxIdx;
             _selectedBoxIdx = -1;
             if (_currentBoundingBoxes != null && Selection.activeGameObject != null)
             {
@@ -102,6 +105,13 @@ namespace FlammAlpha.UnityTools.BoundingBox
                     }
                 }
             }
+
+            // If selection changed to a new item, scroll to it
+            if (_selectedBoxIdx != -1 && _selectedBoxIdx != previousSelectedIdx)
+            {
+                scrollToSelected = true;
+            }
+
             SceneView.RepaintAll();
         }
 
@@ -181,6 +191,7 @@ namespace FlammAlpha.UnityTools.BoundingBox
                 var hitInfo = _currentBoundingBoxes[_hoveredBoxIdx];
                 Selection.activeGameObject = hitInfo.GameObject;
                 EditorGUIUtility.PingObject(hitInfo.GameObject);
+                scrollToSelected = true; // Trigger scroll to selected item
                 e.Use();
             }
 
@@ -254,25 +265,6 @@ namespace FlammAlpha.UnityTools.BoundingBox
                 Handles.DrawLine(pts[_boundingBoxEdges[i, 0]], pts[_boundingBoxEdges[i, 1]]);
         }
 
-        private string EllipsizeBreadcrumbLeft(string breadcrumb, GUIStyle style, float width)
-        {
-            if (string.IsNullOrEmpty(breadcrumb)) return breadcrumb;
-            Vector2 size = style.CalcSize(new GUIContent(breadcrumb));
-            if (size.x <= width) return breadcrumb;
-
-            const string ellipsis = "\u2026";
-            int len = breadcrumb.Length;
-            int left = 0;
-            while (left < len)
-            {
-                string sub = ellipsis + breadcrumb.Substring(left);
-                size = style.CalcSize(new GUIContent(sub));
-                if (size.x <= width) break;
-                left++;
-            }
-            return left > 0 ? ellipsis + breadcrumb.Substring(left) : breadcrumb;
-        }
-
         private void OnGUI()
         {
             EditorGUILayout.BeginHorizontal();
@@ -300,68 +292,134 @@ namespace FlammAlpha.UnityTools.BoundingBox
                 Repaint();
             }
 
+            // Control buttons for expand/collapse all
+            EditorListUtility.DrawExpandCollapseButtons(
+                onExpandAll: () =>
+                {
+                    foreach (var info in skinnedMeshRendererBoundsList)
+                        info.foldout = true;
+                },
+                onCollapseAll: () =>
+                {
+                    foreach (var info in skinnedMeshRendererBoundsList)
+                        info.foldout = false;
+                }
+            );
+            EditorGUILayout.Space();
+
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
 
             bool foundHover = false;
+            float currentY = 0f;
+            float selectedItemY = 0f;
+
             for (int i = 0; i < skinnedMeshRendererBoundsList.Count; i++)
             {
                 var info = skinnedMeshRendererBoundsList[i];
 
-                Color originalColor = GUI.backgroundColor;
-                Color backgroundColor;
-
-                if (i == _hoveredBoxIdx)
-                    backgroundColor = new Color(0.1f, 0.1f, 0.3f); // Blue tint for hovered
-                else if (i == _selectedBoxIdx)
-                    backgroundColor = new Color(0.1f, 0.3f, 0.1f);
-                else if (i % 2 == 1)
-                    backgroundColor = new Color(0.15f, 0.15f, 0.15f);
-                else
-                    backgroundColor = new Color(0.25f, 0.25f, 0.25f);
-
-                GUI.backgroundColor = backgroundColor;
-
-                // Create a custom style that preserves the background color
-                GUIStyle boxStyle = new GUIStyle(GUI.skin.box);
-                boxStyle.normal.background = EditorGUIUtility.whiteTexture;
-
-                Rect verticalRect = EditorGUILayout.BeginVertical(boxStyle);
-
-                // Check for mouse hover over this list entry
+                // Track position for scroll-to-selected functionality
                 if (Event.current.type == EventType.Repaint)
                 {
-                    if (verticalRect.Contains(Event.current.mousePosition))
+                    if (i == _selectedBoxIdx)
                     {
-                        foundHover = true;
-                        if (_hoveredBoxIdx != i)
-                        {
-                            _hoveredBoxIdx = i;
-                            SceneView.RepaintAll();
-                            Repaint();
-                        }
+                        selectedItemY = currentY;
                     }
                 }
 
-                GUIStyle labelStyle;
-                if (i == _hoveredBoxIdx)
-                    labelStyle = new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.cyan } };
-                else if (i == _selectedBoxIdx)
-                    labelStyle = new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.green } };
-                else
-                    labelStyle = EditorStyles.boldLabel;
+                var interaction = EditorListUtility.DrawListItem(
+                    index: i,
+                    drawContent: () => DrawBoundingBoxListItem(info, i),
+                    isSelected: i == _selectedBoxIdx,
+                    isHovered: i == _hoveredBoxIdx
+                );
 
-                string breadcrumb = GetBreadcrumbPathRelative(targetRoot, info.GameObject);
-                if (string.IsNullOrEmpty(breadcrumb))
-                    breadcrumb = "(Root)";
+                // Handle hover state updates
+                if (interaction.isHovered)
+                {
+                    foundHover = true;
+                    if (_hoveredBoxIdx != i)
+                    {
+                        _hoveredBoxIdx = i;
+                        SceneView.RepaintAll();
+                        Repaint();
+                    }
+                }
 
-                float maxWidth = position.width - 56;
-                string displayBreadcrumb = EllipsizeBreadcrumbLeft(breadcrumb, labelStyle, maxWidth);
-                if (GUILayout.Button(new GUIContent(displayBreadcrumb, breadcrumb), labelStyle))
+                // Update current Y position for next iteration
+                if (Event.current.type == EventType.Repaint)
+                {
+                    currentY += interaction.itemRect.height;
+                }
+
+                EditorListUtility.DrawItemSpacing(i, skinnedMeshRendererBoundsList.Count);
+                if (i < skinnedMeshRendererBoundsList.Count - 1)
+                {
+                    currentY += 2f; // Account for spacing
+                }
+            }
+            EditorGUILayout.EndScrollView();
+
+            // Handle scroll to selected item
+            if (scrollToSelected && _selectedBoxIdx != -1 && Event.current.type == EventType.Repaint)
+            {
+                float scrollViewHeight = position.height - 150f; // Approximate available scroll area
+                float targetScrollY = EditorListUtility.CalculateScrollToItem(selectedItemY, scrollViewHeight, 0.3f);
+
+                scrollPosition.y = targetScrollY;
+                scrollToSelected = false;
+                Repaint();
+            }
+
+            // Clear hover state if mouse is not over any list entry
+            if (Event.current.type == EventType.Repaint && !foundHover && _hoveredBoxIdx != -1)
+            {
+                _hoveredBoxIdx = -1;
+                SceneView.RepaintAll();
+                Repaint();
+            }
+        }
+
+        private void DrawBoundingBoxListItem(RendererBoundsInfo info, int index)
+        {
+            string breadcrumb = GetBreadcrumbPathRelative(targetRoot, info.GameObject);
+            if (string.IsNullOrEmpty(breadcrumb))
+                breadcrumb = "(Root)";
+
+            // Foldout header with breadcrumb
+            bool newFoldout = EditorListUtility.DrawClickableFoldout(
+                foldout: info.foldout,
+                title: $"Renderer: {breadcrumb}",
+                onToggle: (value) => info.foldout = value,
+                onHeaderClicked: () =>
+                {
                     Selection.activeGameObject = info.GameObject;
+                    EditorGUIUtility.PingObject(info.GameObject);
+                    scrollToSelected = true;
+                }
+            );
+            info.foldout = newFoldout;
+
+            if (info.foldout)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                {
+                    EditorGUILayout.ObjectField("GameObject", info.GameObject, typeof(GameObject), true);
+                }
 
                 var skinnedRenderer = info.GameObject.GetComponent<SkinnedMeshRenderer>();
                 if (skinnedRenderer != null)
                 {
+                    // Editable root bone field
+                    EditorGUI.BeginChangeCheck();
+                    Transform newRootBone = (Transform)EditorGUILayout.ObjectField("Root Bone", skinnedRenderer.rootBone, typeof(Transform), true);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        Undo.RecordObject(skinnedRenderer, "Change SkinnedMeshRenderer Root Bone");
+                        skinnedRenderer.rootBone = newRootBone;
+                        UpdateSkinnedMeshRendererBoundsList();
+                        return;
+                    }
+
                     EditorGUI.BeginChangeCheck();
                     Vector3 newLocalCenter = EditorGUILayout.Vector3Field("Center", skinnedRenderer.localBounds.center);
                     Vector3 newLocalExtents = EditorGUILayout.Vector3Field("Extents", skinnedRenderer.localBounds.extents);
@@ -370,26 +428,9 @@ namespace FlammAlpha.UnityTools.BoundingBox
                         Undo.RecordObject(skinnedRenderer, "Change SkinnedMeshRenderer Bounds");
                         skinnedRenderer.localBounds = new Bounds(newLocalCenter, newLocalExtents * 2f);
                         UpdateSkinnedMeshRendererBoundsList();
-                        EditorGUILayout.EndVertical();
-                        GUI.backgroundColor = originalColor;
-                        if (i < skinnedMeshRendererBoundsList.Count - 1)
-                            GUILayout.Space(2);
-                        continue;
+                        return;
                     }
                 }
-                EditorGUILayout.EndVertical();
-                GUI.backgroundColor = originalColor;
-                if (i < skinnedMeshRendererBoundsList.Count - 1)
-                    GUILayout.Space(2);
-            }
-            EditorGUILayout.EndScrollView();
-
-            // Clear hover state if mouse is not over any list entry
-            if (Event.current.type == EventType.Repaint && !foundHover && _hoveredBoxIdx != -1)
-            {
-                _hoveredBoxIdx = -1;
-                SceneView.RepaintAll();
-                Repaint();
             }
         }
     }
@@ -402,5 +443,6 @@ namespace FlammAlpha.UnityTools.BoundingBox
         public GameObject GameObject;
         public Bounds Bounds;
         public Transform BoneTransform;
+        public bool foldout = true;
     }
 }

@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
+using FlammAlpha.UnityTools.Common;
 
 namespace FlammAlpha.UnityTools.Materials
 {
@@ -86,31 +87,28 @@ namespace FlammAlpha.UnityTools.Materials
 
         private void DrawControlButtons()
         {
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Expand All", GUILayout.Width(90)))
-            {
-                foreach (var issue in issues)
-                    issue.foldout = true;
-            }
-            if (GUILayout.Button("Collapse All", GUILayout.Width(90)))
-            {
-                foreach (var issue in issues)
-                    issue.foldout = false;
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Select All", GUILayout.Width(90)))
-            {
-                foreach (var issue in issues)
-                    issue.selected = true;
-            }
-            if (GUILayout.Button("Deselect All", GUILayout.Width(90)))
-            {
-                foreach (var issue in issues)
-                    issue.selected = false;
-            }
-            EditorGUILayout.EndHorizontal();
+            EditorListUtility.DrawAllControlButtons(
+                onExpandAll: () =>
+                {
+                    foreach (var issue in issues)
+                        issue.foldout = true;
+                },
+                onCollapseAll: () =>
+                {
+                    foreach (var issue in issues)
+                        issue.foldout = false;
+                },
+                onSelectAll: () =>
+                {
+                    foreach (var issue in issues)
+                        issue.selected = true;
+                },
+                onDeselectAll: () =>
+                {
+                    foreach (var issue in issues)
+                        issue.selected = false;
+                }
+            );
         }
 
         private void DrawIssuesList()
@@ -120,44 +118,48 @@ namespace FlammAlpha.UnityTools.Materials
             {
                 var issue = issues[idx];
                 var hasCandidate = issue.assetCandidate != null;
-                var boxColor = hasCandidate ? GUI.backgroundColor : Color.red;
-                var prevColor = GUI.backgroundColor;
-                GUI.backgroundColor = boxColor;
+                var customColor = hasCandidate ? (Color?)null : Color.red;
 
-                EditorGUILayout.BeginVertical(GUI.skin.box);
-                EditorGUILayout.BeginHorizontal();
-                issue.selected = EditorGUILayout.Toggle(issue.selected, GUILayout.Width(18));
-                issue.foldout = EditorGUILayout.Foldout(issue.foldout, $"Renderer: {issue.renderer.name} | Slot: {issue.slot}", true);
-                EditorGUILayout.EndHorizontal();
+                var (newToggle, newFoldout) = EditorListUtility.DrawSelectableListItem(
+                    index: idx,
+                    isToggled: issue.selected,
+                    foldout: issue.foldout,
+                    title: $"Renderer: {issue.renderer.name} | Slot: {issue.slot}",
+                    drawContent: () => DrawIssueContent(issue, hasCandidate),
+                    customBackgroundColor: customColor,
+                    onToggleChanged: (value) => issue.selected = value,
+                    onFoldoutChanged: (value) => issue.foldout = value
+                );
 
-                if (issue.foldout)
-                {
-                    using (new EditorGUI.DisabledScope(true))
-                    {
-                        EditorGUILayout.ObjectField("Renderer", issue.renderer, typeof(Renderer), true);
-                        EditorGUILayout.LabelField($"Slot: {issue.slot}");
-                    }
-
-                    if (mode == Mode.RevertInstances)
-                    {
-                        EditorGUILayout.ObjectField("Instance Material", issue.instance, typeof(Material), false);
-                        EditorGUILayout.ObjectField("Replacement Asset", issue.assetCandidate, typeof(Material), false);
-                        if (!hasCandidate)
-                        {
-                            GUIStyle redLabel = new GUIStyle(EditorStyles.boldLabel);
-                            redLabel.normal.textColor = Color.red;
-                            EditorGUILayout.LabelField("No suitable replacement asset found!", redLabel);
-                        }
-                    }
-                    else
-                    {
-                        EditorGUILayout.ObjectField("Asset Material", issue.assetCandidate, typeof(Material), false);
-                    }
-                }
-                EditorGUILayout.EndVertical();
-                GUI.backgroundColor = prevColor;
+                issue.selected = newToggle;
+                issue.foldout = newFoldout;
             }
             EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawIssueContent(InstanceIssue issue, bool hasCandidate)
+        {
+            using (new EditorGUI.DisabledScope(true))
+            {
+                EditorGUILayout.ObjectField("Renderer", issue.renderer, typeof(Renderer), true);
+                EditorGUILayout.LabelField($"Slot: {issue.slot}");
+            }
+
+            if (mode == Mode.RevertInstances)
+            {
+                EditorGUILayout.ObjectField("Instance Material", issue.instance, typeof(Material), false);
+                EditorGUILayout.ObjectField("Replacement Asset", issue.assetCandidate, typeof(Material), false);
+                if (!hasCandidate)
+                {
+                    GUIStyle redLabel = new GUIStyle(EditorStyles.boldLabel);
+                    redLabel.normal.textColor = Color.red;
+                    EditorGUILayout.LabelField("No suitable replacement asset found!", redLabel);
+                }
+            }
+            else
+            {
+                EditorGUILayout.ObjectField("Asset Material", issue.assetCandidate, typeof(Material), false);
+            }
         }
 
         private void DrawActionButton()

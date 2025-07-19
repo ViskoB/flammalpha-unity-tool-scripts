@@ -3,6 +3,7 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using FlammAlpha.UnityTools.Common;
 
 namespace FlammAlpha.UnityTools.Animation
 {
@@ -24,6 +25,7 @@ namespace FlammAlpha.UnityTools.Animation
         private bool regexReplace;
         private string oldPathValue = "Root";
         private string newPathValue = "SomeNewObject/Root";
+        private EditorListUtility.FoldoutManager<AnimationClip> clipFoldouts = new();
         [MenuItem("Tools/FlammAlpha/Animation Hierarchy Editor")]
         private static void ShowWindow() => GetWindow<AnimationHierarchyEditor>();
 
@@ -71,15 +73,37 @@ namespace FlammAlpha.UnityTools.Animation
 
             GUILayout.Space(12);
 
+            // Expand/Collapse All buttons
+            EditorListUtility.DrawExpandCollapseButtons(
+                () => clipFoldouts.SetAll(animationClips, true),
+                () => clipFoldouts.SetAll(animationClips, false)
+            );
+
+            GUILayout.Space(12);
+
             for (int clipIndex = 0; clipIndex < animationClips.Length; ++clipIndex)
             {
                 var clip = animationClips[clipIndex];
-                using (new GUILayout.VerticalScope("GroupBox"))
+
+                // Ensure foldout state exists for this clip
+                clipFoldouts.EnsureExists(clip);
+
+                // Draw clip as a list item with foldout (vertical layout)
+                EditorListUtility.DrawListItem(clipIndex, () =>
                 {
-                    GUILayout.Label($"Clip: {clip.name}", EditorStyles.boldLabel);
-                    DisplayPathItemsForClip(clip);
-                    GUILayout.Space(10);
-                }
+                    // Collapsible header
+                    clipFoldouts[clip] = EditorListUtility.DrawCollapsibleHeader(clipFoldouts[clip], $"Clip: {clip.name}");
+
+                    if (clipFoldouts[clip])
+                    {
+                        using (EditorListUtility.CreateIndentScope())
+                        {
+                            DisplayPathItemsForClip(clip);
+                        }
+                    }
+                });
+
+                EditorListUtility.DrawSectionSpacing(clipIndex, animationClips.Length);
             }
 
             GUILayout.Space(40);
@@ -91,13 +115,15 @@ namespace FlammAlpha.UnityTools.Animation
             var allBindings = AnimationUtility.GetCurveBindings(clip).Concat(AnimationUtility.GetObjectReferenceCurveBindings(clip)).ToList();
             var grouped = allBindings.GroupBy(b => b.path).Select(g => new { Path = g.Key, Bindings = g.ToList() }).ToList();
             GUIStyle resetButtonStyle = new() { contentOffset = new Vector2(0, 3.5f) };
+
             for (int i = 0; i < grouped.Count; ++i)
             {
                 string path = grouped[i].Path;
                 GameObject obj = FindObjectInRoot(path);
                 var properties = grouped[i].Bindings;
 
-                using (new GUILayout.HorizontalScope())
+                // Draw path items as simple horizontal layouts without backgrounds
+                using (new EditorGUILayout.HorizontalScope())
                 {
                     int globalPathIndex = pathsKeys.IndexOf(path);
                     bool isModifiedPath = globalPathIndex >= 0 && tempPathOverrides[globalPathIndex] != path;
@@ -125,6 +151,10 @@ namespace FlammAlpha.UnityTools.Animation
                         UpdatePath(path, ChildPath(newObj), false);
                     GUI.color = prevColor;
                 }
+
+                // Add minimal spacing between path items
+                if (i < grouped.Count - 1)
+                    GUILayout.Space(1);
             }
         }
 
@@ -135,6 +165,12 @@ namespace FlammAlpha.UnityTools.Animation
 
             if (animationClips != null)
             {
+                // Initialize foldout states for new clips
+                foreach (var clip in animationClips)
+                {
+                    clipFoldouts.EnsureExists(clip);
+                }
+
                 foreach (var animationClip in animationClips)
                 {
                     FillModelWithCurves(AnimationUtility.GetCurveBindings(animationClip));
