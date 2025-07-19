@@ -1,7 +1,11 @@
 {
-    "name": "Unity-BoundingBox-Finder-Assembly",
-    "rootNamespace": "BoundingBoxFinder",
-    "references": [],
+    "name": "FlammAlpha.UnityTools",
+    "rootNamespace": "FlammAlpha.UnityTools",
+    "references": [
+        "Unity.Timeline",
+        "VRC.SDK3A",
+        "VRC.SDKBase"
+    ],
     "includePlatforms": [
         "Editor"
     ],
@@ -10,7 +14,9 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
-    "defineConstraints": [],
+    "defineConstraints": [
+        "UNITY_EDITOR"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }

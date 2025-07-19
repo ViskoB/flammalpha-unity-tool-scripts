@@ -5,7 +5,7 @@ using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
-namespace UnityHierarchyColor
+namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
     public class TypeSearchPopup : EditorWindow
     {

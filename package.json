@@ -1,0 +1,24 @@
+{
+  "name": "com.flammalpha.unity-tools",
+  "displayName": "FlammAlpha Unity Tools",
+  "version": "1.0.0",
+  "description": "A comprehensive collection of Unity Editor tools including bounding box finder, hierarchy coloring, component management, and VRChat utilities.",
+  "unity": "2022.3.6f1",
+  "author": {
+    "name": "FlammAlpha"
+  },
+  "legacyFolders": {
+  },
+  "legacyFiles": {
+  },
+  "hideInEditor": false,
+  "keywords": [
+    "unity",
+    "editor",
+    "tools",
+    "hierarchy",
+    "components",
+    "vrchat",
+    "utilities"
+  ]
+}

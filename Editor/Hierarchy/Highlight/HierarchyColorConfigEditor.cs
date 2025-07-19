@@ -1,7 +1,3 @@
-/*************************************************************************************
-* FlammAlpha 2025
-* Configuration for the Hierarchy Color View
-*************************************************************************************/
 using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
@@ -9,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace UnityHierarchyColor
+namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
     public class HierarchyHighlightConfigEditor : EditorWindow
     {
@@ -19,7 +15,7 @@ namespace UnityHierarchyColor
         [NonSerialized] private ReorderableList nameHighlightList;
         [NonSerialized] private ReorderableList propertyHighlightList;
 
-        [MenuItem("Tools/FlammAlpha/Hierarchy Color/Config")]
+        [MenuItem("Tools/FlammAlpha/Hierarchy/Highlight Config")]
         protected static void OpenWindow()
         {
             GetWindow<HierarchyHighlightConfigEditor>("Hierarchy Highlight Config");
@@ -103,18 +99,6 @@ namespace UnityHierarchyColor
                 .FirstOrDefault(tt => tt.AssemblyQualifiedName == typeName || tt.FullName == typeName);
         }
 
-        private List<string> GetTypePropertyNames(Type type)
-        {
-            if (type == null) return new List<string>();
-            var names = type
-                .GetMembers(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public)
-                .Where(m => (m.MemberType == System.Reflection.MemberTypes.Field || m.MemberType == System.Reflection.MemberTypes.Property))
-                .Select(m => m.Name)
-                .Distinct()
-                .ToList();
-            return names;
-        }
-
         private List<string> GetListPropertyNames(Type type)
         {
             if (type == null) return new List<string>();
@@ -151,9 +135,9 @@ namespace UnityHierarchyColor
         {
             typeConfigList = new ReorderableList(config.typeConfigs, typeof(TypeConfigEntry), true, true, true, true);
             typeConfigList.drawHeaderCallback = rect =>
-                {
-                    EditorGUI.LabelField(rect, "Component Highlight Rules");
-                };
+            {
+                EditorGUI.LabelField(rect, "Component Highlight Rules");
+            };
             typeConfigList.drawElementCallback = DrawTypeConfigElement;
             typeConfigList.onAddCallback = list =>
             {

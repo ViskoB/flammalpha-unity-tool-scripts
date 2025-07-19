@@ -1,20 +1,18 @@
-/*************************************************************************************
-* FlammAlpha 2024
-* Colors the Hierarchy-View in Unity (Async Rewrite, with property highlight support)
-*************************************************************************************/
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Concurrent;
 
-namespace UnityHierarchyColor
+namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
-    /// <summary> Sets a background color for game objects in the Hierarchy tab (asynchronously batches heavy computation, supports property-based coloring)</summary>
+    /// <summary>
+    /// Sets a background color for game objects in the Hierarchy tab with asynchronous computation
+    /// and property-based coloring support.
+    /// </summary>
     [InitializeOnLoad]
-    public class HierarchyObjectColor
+    public class HierarchyHighlighting
     {
         const int MaxDepth = 100;
         private static HierarchyHighlightConfig currentConfig;
@@ -52,6 +50,9 @@ namespace UnityHierarchyColor
 
         private enum CountKind { Type, Property }
 
+        /// <summary>
+        /// Context for managing count caching operations.
+        /// </summary>
         private class CountContext
         {
             public readonly ConcurrentDictionary<int, int[]> RecursiveCache;
@@ -89,12 +90,24 @@ namespace UnityHierarchyColor
             }
         }
 
-        static HierarchyObjectColor()
+        static HierarchyHighlighting()
         {
             HierarchyHighlightConfigUtility.OnConfigUpdate += OnConfigUpdate;
             EditorApplication.hierarchyWindowItemOnGUI += HandleHierarchyWindowItemOnGUI;
             EditorApplication.update += EditorUpdate;
-            HierarchyHighlightConfigUtility.ForceLoadConfig();
+            
+            // Delay the config loading to ensure Unity is fully initialized
+            EditorApplication.delayCall += () =>
+            {
+                try
+                {
+                    HierarchyHighlightConfigUtility.ForceLoadConfig();
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"HierarchyHighlighting: Failed to load config: {ex.Message}");
+                }
+            };
         }
 
         private static void OnConfigUpdate(HierarchyHighlightConfig config)
@@ -127,11 +140,12 @@ namespace UnityHierarchyColor
             ForceRecache();
         }
 
-#if UNITY_EDITOR
-        [MenuItem("Tools/FlammAlpha/Hierarchy Color/Force Recache")]
+        [MenuItem("Tools/FlammAlpha/Hierarchy/Force Recache Highlight")]
         private static void ForceRecacheMenuItem() => ForceRecache();
-#endif
 
+        /// <summary>
+        /// Forces a complete recache of all hierarchy highlight data.
+        /// </summary>
         public static void ForceRecache()
         {
             foreach (var ctx in new[] { typeCountContext, propertyCountContext })
@@ -493,22 +507,22 @@ namespace UnityHierarchyColor
         private static void AccumulateCountsRecursiveSafe(Transform obj, int[] counts)
         {
             try { if (obj != null) AccumulateCountsRecursive(obj, counts); }
-            catch (Exception e) { Debug.LogError("HierarchyObjectColor: Exception in AccumulateCountsRecursive: " + e); }
+            catch (Exception e) { Debug.LogError("HierarchyHighlighting: Exception in AccumulateCountsRecursive: " + e); }
         }
         private static void AccumulateCountSelfSafe(Transform obj, int[] counts)
         {
             try { if (obj != null) AccumulateCountSelf(obj, counts); }
-            catch (Exception e) { Debug.LogError("HierarchyObjectColor: Exception in AccumulateCountSelf: " + e); }
+            catch (Exception e) { Debug.LogError("HierarchyHighlighting: Exception in AccumulateCountSelf: " + e); }
         }
         private static void AccumulatePropertyCountsRecursiveSafe(Transform obj, int[] counts)
         {
             try { if (obj != null) AccumulatePropertyCountsRecursive(obj, counts); }
-            catch (Exception e) { Debug.LogError("HierarchyObjectColor: Exception in AccumulatePropertyCountsRecursive: " + e); }
+            catch (Exception e) { Debug.LogError("HierarchyHighlighting: Exception in AccumulatePropertyCountsRecursive: " + e); }
         }
         private static void AccumulatePropertyCountSelfSafe(Transform obj, int[] counts)
         {
             try { if (obj != null) AccumulatePropertyCountSelf(obj, counts); }
-            catch (Exception e) { Debug.LogError("HierarchyObjectColor: Exception in AccumulatePropertyCountSelf: " + e); }
+            catch (Exception e) { Debug.LogError("HierarchyHighlighting: Exception in AccumulatePropertyCountSelf: " + e); }
         }
 
         private static void ClearQueuesAndPending()
@@ -532,7 +546,7 @@ namespace UnityHierarchyColor
         {
             if (depth > MaxDepth)
             {
-                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in HasComponentInHierarchy. Possible circular reference detected.");
+                Debug.LogWarning("HierarchyHighlighting: Maximum recursion depth reached in HasComponentInHierarchy. Possible circular reference detected.");
                 return false;
             }
             if (obj.GetComponent(componentType) != null)
@@ -547,7 +561,7 @@ namespace UnityHierarchyColor
         {
             if (depth > MaxDepth)
             {
-                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in NameOrChildHasPrefixRecursive. Possible circular reference detected.");
+                Debug.LogWarning("HierarchyHighlighting: Maximum recursion depth reached in NameOrChildHasPrefixRecursive. Possible circular reference detected.");
                 return false;
             }
             if (obj.name.StartsWith(prefix, StringComparison.Ordinal))
@@ -585,7 +599,7 @@ namespace UnityHierarchyColor
         {
             if (depth > MaxDepth)
             {
-                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in AccumulatePropertyCountsGeneric. Possible circular reference detected.");
+                Debug.LogWarning("HierarchyHighlighting: Maximum recursion depth reached in AccumulatePropertyCountsGeneric. Possible circular reference detected.");
                 return;
             }
             var propertyConfigs = GetPropertyHighlightConfigs();
@@ -618,7 +632,7 @@ namespace UnityHierarchyColor
         {
             if (depth > MaxDepth)
             {
-                Debug.LogWarning("HierarchyObjectColor: Maximum recursion depth reached in AccumulateTypeCountsGeneric. Possible circular reference detected.");
+                Debug.LogWarning("HierarchyHighlighting: Maximum recursion depth reached in AccumulateTypeCountsGeneric. Possible circular reference detected.");
                 return;
             }
             var typeConfigs = GetTypeConfigs();
@@ -651,4 +665,3 @@ namespace UnityHierarchyColor
         #endregion
     }
 }
-
