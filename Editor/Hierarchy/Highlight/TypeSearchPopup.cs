@@ -12,7 +12,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         private static Action<Type> _onTypeSelected;
         private static string _search = "";
         private static List<Type> _componentTypes;
-        private static MonoScript _droppedScript;
         private Vector2 _scroll;
         private bool _focusSearch;
         private bool _clearSearch;
@@ -21,7 +20,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         {
             _onTypeSelected = onSelect;
             _search = "";
-            _droppedScript = null;
             var window = CreateInstance<TypeSearchPopup>();
             window.titleContent = new GUIContent("Pick a Type");
             Vector2 windowSize = new Vector2(420, 440);
