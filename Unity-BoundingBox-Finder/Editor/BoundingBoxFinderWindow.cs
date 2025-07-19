@@ -163,7 +163,14 @@ public class BoundingBoxFinderWindow : EditorWindow
         Event e = Event.current;
         Ray mouseRay = HandleUtility.GUIPointToWorldRay(e.mousePosition);
         const float maxDistanceToEdge = 0.11f;
-        _hoveredBoxIdx = FindHoveredBoundingBox(mouseRay, maxDistanceToEdge);
+        int newHoveredIdx = FindHoveredBoundingBox(mouseRay, maxDistanceToEdge);
+        
+        // Update hover state and repaint if it changed
+        if (_hoveredBoxIdx != newHoveredIdx)
+        {
+            _hoveredBoxIdx = newHoveredIdx;
+            Repaint(); // Repaint the window to update list highlighting
+        }
 
         if (e.type == EventType.MouseDown && e.button == 0 && _hoveredBoxIdx != -1)
         {
@@ -283,8 +290,15 @@ public class BoundingBoxFinderWindow : EditorWindow
             return;
         }
         
+        // Handle mouse movement to detect when we're outside the list area
+        if (Event.current.type == EventType.MouseMove)
+        {
+            Repaint();
+        }
+        
         scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
 
+        bool foundHover = false;
         for (int i = 0; i < skinnedMeshRendererBoundsList.Count; i++)
         {
             var info = skinnedMeshRendererBoundsList[i];
@@ -292,7 +306,9 @@ public class BoundingBoxFinderWindow : EditorWindow
             Color originalColor = GUI.backgroundColor;
             Color backgroundColor;
 
-            if (i == _selectedBoxIdx)
+            if (i == _hoveredBoxIdx)
+                backgroundColor = new Color(0.1f, 0.1f, 0.3f); // Blue tint for hovered
+            else if (i == _selectedBoxIdx)
                 backgroundColor = new Color(0.1f, 0.3f, 0.1f);
             else if (i % 2 == 1)
                 backgroundColor = new Color(0.15f, 0.15f, 0.15f);
@@ -305,12 +321,30 @@ public class BoundingBoxFinderWindow : EditorWindow
             GUIStyle boxStyle = new GUIStyle(GUI.skin.box);
             boxStyle.normal.background = EditorGUIUtility.whiteTexture;
             
-            EditorGUILayout.BeginVertical(boxStyle);
+            Rect verticalRect = EditorGUILayout.BeginVertical(boxStyle);
+            
+            // Check for mouse hover over this list entry
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (verticalRect.Contains(Event.current.mousePosition))
+                {
+                    foundHover = true;
+                    if (_hoveredBoxIdx != i)
+                    {
+                        _hoveredBoxIdx = i;
+                        SceneView.RepaintAll();
+                        Repaint();
+                    }
+                }
+            }
 
-            GUIStyle labelStyle =
-                (i == _selectedBoxIdx)
-                ? new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.green } }
-                : EditorStyles.boldLabel;
+            GUIStyle labelStyle;
+            if (i == _hoveredBoxIdx)
+                labelStyle = new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.cyan } };
+            else if (i == _selectedBoxIdx)
+                labelStyle = new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = Color.green } };
+            else
+                labelStyle = EditorStyles.boldLabel;
 
             string breadcrumb = GetBreadcrumbPathRelative(targetRoot, info.GameObject);
             if (string.IsNullOrEmpty(breadcrumb))
@@ -345,6 +379,14 @@ public class BoundingBoxFinderWindow : EditorWindow
                 GUILayout.Space(2);
         }
         EditorGUILayout.EndScrollView();
+        
+        // Clear hover state if mouse is not over any list entry
+        if (Event.current.type == EventType.Repaint && !foundHover && _hoveredBoxIdx != -1)
+        {
+            _hoveredBoxIdx = -1;
+            SceneView.RepaintAll();
+            Repaint();
+        }
     }
 
     private class RendererBoundsInfo
