@@ -6,10 +6,10 @@ using System.Reflection;
 
 namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
-    public static class AddToHierarchyColorMenu
+    public static class AddToHierarchyConfigMenu
     {
-        [MenuItem("CONTEXT/Component/FlammAlpha/Add to Hierarchy Color Config")]
-        private static void AddComponentToHierarchyColorConfig(MenuCommand command)
+        [MenuItem("CONTEXT/Component/FlammAlpha/Add to Hierarchy Highlight Config")]
+        private static void AddComponentToHierarchyHighlightConfig(MenuCommand command)
         {
             var component = command.context as Component;
             if (component == null) return;
@@ -28,20 +28,20 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 
             if (addedOrUpdated)
             {
-                EditorUtility.DisplayDialog("Hierarchy Color",
-                    $"Added or updated component type '{component.GetType().Name}' in Hierarchy Color Config.",
+                EditorUtility.DisplayDialog("Hierarchy Highlight",
+                    $"Added or updated component type '{component.GetType().Name}' in Hierarchy Highlight Config.",
                     "OK");
             }
             else
             {
-                EditorUtility.DisplayDialog("Hierarchy Color",
+                EditorUtility.DisplayDialog("Hierarchy Highlight",
                     $"Component type '{component.GetType().Name}' is already in the config.",
                     "OK");
             }
         }
 
-        [MenuItem("CONTEXT/Component/FlammAlpha/Add Property List to Hierarchy Color Config")]
-        private static void AddPropertyListToHierarchyColorConfig(MenuCommand command)
+        [MenuItem("CONTEXT/Component/FlammAlpha/Add Property List to Hierarchy Highlight Config")]
+        private static void AddPropertyListToHierarchyHighlightConfig(MenuCommand command)
         {
             var component = command.context as Component;
             if (component == null) return;
