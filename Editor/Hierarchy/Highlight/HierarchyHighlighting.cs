@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Concurrent;
+using FlammAlpha.UnityTools.Common;
 
 namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
@@ -95,7 +96,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             HierarchyHighlightConfigUtility.OnConfigUpdate += OnConfigUpdate;
             EditorApplication.hierarchyWindowItemOnGUI += HandleHierarchyWindowItemOnGUI;
             EditorApplication.update += EditorUpdate;
-            
+
             // Delay the config loading to ensure Unity is fully initialized
             EditorApplication.delayCall += () =>
             {
@@ -103,7 +104,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                 {
                     HierarchyHighlightConfigUtility.ForceLoadConfig();
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
                     Debug.LogError($"HierarchyHighlighting: Failed to load config: {ex.Message}");
                 }
@@ -230,7 +231,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                     foreach (var comp in comps)
                     {
                         object val = GetComponentValue(comp, ptype, phe.propertyName);
-                        if ((val is bool b && b) || (val != null && !(val is bool)))
+                        if (CollectionCountUtility.IsValueActive(val))
                         {
                             return phe.color;
                         }
@@ -299,7 +300,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                             foreach (var comp in comps)
                             {
                                 object val = GetComponentValue(comp, ptype, phe.propertyName);
-                                if ((val is bool b && b) || (val != null && !(val is bool)))
+                                if (CollectionCountUtility.IsValueActive(val))
                                 {
                                     match = true; break;
                                 }
@@ -544,51 +545,24 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         }
         private static bool HasComponentInHierarchy(GameObject obj, Type componentType, int depth = 0)
         {
-            if (depth > MaxDepth)
-            {
-                Debug.LogWarning("HierarchyHighlighting: Maximum recursion depth reached in HasComponentInHierarchy. Possible circular reference detected.");
-                return false;
-            }
-            if (obj.GetComponent(componentType) != null)
-                return true;
-            foreach (Transform child in obj.transform)
-                if (HasComponentInHierarchy(child.gameObject, componentType, depth + 1))
-                    return true;
-            return false;
+            return HierarchyTraversalUtility.HasComponentInHierarchy(obj, componentType, MaxDepth);
         }
 
         private static bool NameOrChildHasPrefixRecursive(GameObject obj, string prefix, int depth = 0)
         {
-            if (depth > MaxDepth)
-            {
-                Debug.LogWarning("HierarchyHighlighting: Maximum recursion depth reached in NameOrChildHasPrefixRecursive. Possible circular reference detected.");
-                return false;
-            }
-            if (obj.name.StartsWith(prefix, StringComparison.Ordinal))
-                return true;
-            foreach (Transform child in obj.transform)
-                if (NameOrChildHasPrefixRecursive(child.gameObject, prefix, depth + 1))
-                    return true;
-            return false;
+            return HierarchyTraversalUtility.HasNamePrefixInHierarchy(obj, prefix, MaxDepth);
         }
 
         private delegate object ValueExtractor(object component, Type type, string propertyName);
 
         private static object GetComponentValue(object comp, Type t, string propertyName)
         {
-            var prop = t.GetProperty(propertyName);
-            if (prop != null) return prop.GetValue(comp);
-            var field = t.GetField(propertyName);
-            if (field != null) return field.GetValue(comp);
-            return null;
+            return ComponentReflectionUtility.GetComponentValue(comp, t, propertyName);
         }
+
         private static void IncrementCountForValue(object val, int[] counts, int idx)
         {
-            if (val is System.Collections.ICollection collection)
-            {
-                counts[idx] += collection.Count;
-            }
-            // fallback: if it's null, do nothing
+            CollectionCountUtility.IncrementCountForValue(val, counts, idx);
         }
 
         private static void AccumulatePropertyCountsGeneric(

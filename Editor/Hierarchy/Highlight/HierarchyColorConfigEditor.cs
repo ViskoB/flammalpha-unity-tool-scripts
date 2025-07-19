@@ -4,6 +4,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FlammAlpha.UnityTools.Common;
 
 namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
@@ -102,14 +103,34 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         private List<string> GetListPropertyNames(Type type)
         {
             if (type == null) return new List<string>();
-            var props = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                .Where(p => typeof(System.Collections.IList).IsAssignableFrom(p.PropertyType)
-                    || (p.PropertyType.IsGenericType && p.PropertyType.GetInterfaces().Any(x =>
-                        x.IsGenericType && x.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IList<>))))
-                .Select(p => p.Name)
-                .Distinct()
-                .ToList();
-            return props;
+            
+            // Use ComponentReflectionUtility to get filtered property names
+            var props = ComponentReflectionUtility.GetPropertyNames(
+                type, 
+                includeCollections: true, 
+                includeMaterials: true, 
+                includeBooleans: true, 
+                filterProblematic: true
+            ).ToList();
+                
+            // Add safe alternatives for problematic properties
+            var safeAlternatives = PropertySafetyUtility.GetSafeAlternatives(type);
+            foreach (var alternative in safeAlternatives)
+            {
+                if (!props.Contains(alternative))
+                    props.Add(alternative);
+            }
+            
+            return props.OrderBy(p => p).ToList();
+        }
+
+        /// <summary>
+        /// Checks if a property on a given type would cause issues when accessed in edit mode.
+        /// Returns true for properties that create material instances or other problematic behaviors.
+        /// </summary>
+        private bool IsProblematicProperty(Type componentType, string propertyName)
+        {
+            return PropertySafetyUtility.IsProblematicProperty(componentType, propertyName);
         }
 
         private void SetupReorderableLists()
@@ -340,10 +361,14 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             if (selectedIndex < 0) selectedIndex = 0;
             if (propertyOptions.Count > 0)
             {
+                string tooltipText = "Properties filtered to exclude those that create instances in edit mode (like material, materials, mesh).\n" +
+                                   "Safe alternatives (like sharedMaterial, sharedMaterials, sharedMesh) are included where available.";
+                
                 int newSelectedIndex = EditorGUI.Popup(
                     new Rect(xProperty, y, wProperty, EditorGUIUtility.singleLineHeight),
+                    new GUIContent("", tooltipText),
                     selectedIndex,
-                    propertyOptions.ToArray()
+                    propertyOptions.Select(p => new GUIContent(p)).ToArray()
                 );
                 entry.propertyName = propertyOptions[newSelectedIndex];
             }
@@ -351,7 +376,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             {
                 EditorGUI.LabelField(
                     new Rect(xProperty, y, wProperty, EditorGUIUtility.singleLineHeight),
-                    "No list properties"
+                    new GUIContent("No properties", "No suitable properties found for highlighting on this component type")
                 );
                 entry.propertyName = null;
             }
@@ -407,6 +432,33 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             EditorGUILayout.Space();
 
             propertyHighlightList.DoLayoutList();
+
+            // Check for and display warnings about problematic property configurations
+            bool hasProblematicConfigs = false;
+            foreach (var entry in config.propertyHighlightConfigs)
+            {
+                if (entry != null && entry.enabled && !string.IsNullOrEmpty(entry.componentTypeName) && !string.IsNullOrEmpty(entry.propertyName))
+                {
+                    Type componentType = GetTypeFromString(entry.componentTypeName);
+                    if (componentType != null && PropertySafetyUtility.IsProblematicProperty(componentType, entry.propertyName))
+                    {
+                        hasProblematicConfigs = true;
+                        break;
+                    }
+                }
+            }
+
+            if (hasProblematicConfigs)
+            {
+                EditorGUILayout.HelpBox(
+                    "⚠️ Warning: Some property configurations use problematic properties that may create material/mesh instances in edit mode.\n" +
+                    "The hierarchy highlighting system automatically handles these safely, but consider using the safe alternatives:\n" +
+                    "• Use 'sharedMaterial' instead of 'material'\n" +
+                    "• Use 'sharedMaterials' instead of 'materials'\n" +
+                    "• Use 'sharedMesh' instead of 'mesh'",
+                    MessageType.Warning
+                );
+            }
 
             EditorGUILayout.Space();
 
