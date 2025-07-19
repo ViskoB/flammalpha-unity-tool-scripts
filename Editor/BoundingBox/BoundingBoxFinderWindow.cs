@@ -168,7 +168,7 @@ namespace FlammAlpha.UnityTools.BoundingBox
             Ray mouseRay = HandleUtility.GUIPointToWorldRay(e.mousePosition);
             const float maxDistanceToEdge = 0.11f;
             int newHoveredIdx = FindHoveredBoundingBox(mouseRay, maxDistanceToEdge);
-            
+
             // Update hover state and repaint if it changed
             if (_hoveredBoxIdx != newHoveredIdx)
             {
@@ -293,13 +293,13 @@ namespace FlammAlpha.UnityTools.BoundingBox
                 EditorGUILayout.HelpBox("No SkinnedMeshRenderers found in selected GameObject.", MessageType.Info);
                 return;
             }
-            
+
             // Handle mouse movement to detect when we're outside the list area
             if (Event.current.type == EventType.MouseMove)
             {
                 Repaint();
             }
-            
+
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
 
             bool foundHover = false;
@@ -324,9 +324,9 @@ namespace FlammAlpha.UnityTools.BoundingBox
                 // Create a custom style that preserves the background color
                 GUIStyle boxStyle = new GUIStyle(GUI.skin.box);
                 boxStyle.normal.background = EditorGUIUtility.whiteTexture;
-                
+
                 Rect verticalRect = EditorGUILayout.BeginVertical(boxStyle);
-                
+
                 // Check for mouse hover over this list entry
                 if (Event.current.type == EventType.Repaint)
                 {
@@ -383,7 +383,7 @@ namespace FlammAlpha.UnityTools.BoundingBox
                     GUILayout.Space(2);
             }
             EditorGUILayout.EndScrollView();
-            
+
             // Clear hover state if mouse is not over any list entry
             if (Event.current.type == EventType.Repaint && !foundHover && _hoveredBoxIdx != -1)
             {

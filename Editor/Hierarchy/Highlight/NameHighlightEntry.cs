@@ -12,13 +12,13 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
     {
         [Tooltip("Name prefix to match against GameObject names")]
         public string prefix;
-        
+
         [Tooltip("Background color for highlighted GameObjects")]
         public Color color;
-        
+
         [Tooltip("If true, parent objects are also highlighted when children have matching names")]
         public bool propagateUpwards;
-        
+
         [Tooltip("Whether this highlighting rule is active")]
         public bool enabled = true;
     }

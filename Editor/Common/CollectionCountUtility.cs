@@ -39,13 +39,13 @@ namespace FlammAlpha.UnityTools.Common
         public static bool IsValueActive(object value)
         {
             if (value == null) return false;
-            
+
             // Boolean values are active if true
             if (value is bool b) return b;
-            
+
             // Collections are active if they have items
             if (value is ICollection collection) return collection.Count > 0;
-            
+
             // Other non-null values are considered active
             return true;
         }
@@ -58,12 +58,12 @@ namespace FlammAlpha.UnityTools.Common
         public static string GetValueSummary(object value)
         {
             if (value == null) return "null";
-            
+
             if (value is bool b) return b.ToString().ToLower();
-            
+
             if (value is ICollection collection)
                 return $"{collection.Count} items";
-            
+
             return value.GetType().Name;
         }
     }

@@ -103,16 +103,16 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         private List<string> GetListPropertyNames(Type type)
         {
             if (type == null) return new List<string>();
-            
+
             // Use ComponentReflectionUtility to get filtered property names
             var props = ComponentReflectionUtility.GetPropertyNames(
-                type, 
-                includeCollections: true, 
-                includeMaterials: true, 
-                includeBooleans: true, 
+                type,
+                includeCollections: true,
+                includeMaterials: true,
+                includeBooleans: true,
                 filterProblematic: true
             ).ToList();
-                
+
             // Add safe alternatives for problematic properties
             var safeAlternatives = PropertySafetyUtility.GetSafeAlternatives(type);
             foreach (var alternative in safeAlternatives)
@@ -120,7 +120,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                 if (!props.Contains(alternative))
                     props.Add(alternative);
             }
-            
+
             return props.OrderBy(p => p).ToList();
         }
 
@@ -363,7 +363,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             {
                 string tooltipText = "Properties filtered to exclude those that create instances in edit mode (like material, materials, mesh).\n" +
                                    "Safe alternatives (like sharedMaterial, sharedMaterials, sharedMesh) are included where available.";
-                
+
                 int newSelectedIndex = EditorGUI.Popup(
                     new Rect(xProperty, y, wProperty, EditorGUIUtility.singleLineHeight),
                     new GUIContent("", tooltipText),

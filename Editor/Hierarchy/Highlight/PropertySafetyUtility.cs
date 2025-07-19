@@ -47,10 +47,10 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                     "main", "emission", "shape", "velocityOverLifetime", "limitVelocityOverLifetime",
                     "inheritVelocity", "forceOverLifetime", "colorOverLifetime", "colorBySpeed",
                     "sizeOverLifetime", "sizeBySpeed", "rotationOverLifetime", "rotationBySpeed",
-                    "externalForces", "noise", "collision", "trigger", "subEmitters", 
+                    "externalForces", "noise", "collision", "trigger", "subEmitters",
                     "textureSheetAnimation", "lights", "trails"
                 };
-                
+
                 if (problematicModules.Contains(propertyName))
                 {
                     return true; // These create module instances when accessed
@@ -59,10 +59,10 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 
             // Add more problematic property patterns here as they are discovered
             // Examples of other Unity components that might have similar issues:
-            
+
             // LineRenderer.materials creates instances (but materials is already covered above for Renderer)
             // TrailRenderer.materials creates instances (but materials is already covered above for Renderer)
-            
+
             return false;
         }
 
@@ -141,7 +141,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                 return null;
 
             string safeAlternative = GetSafeAlternative(componentType, propertyName);
-            
+
             if (!string.IsNullOrEmpty(safeAlternative))
             {
                 return $"⚠️ Property '{propertyName}' creates instances in edit mode. Consider using '{safeAlternative}' instead.";

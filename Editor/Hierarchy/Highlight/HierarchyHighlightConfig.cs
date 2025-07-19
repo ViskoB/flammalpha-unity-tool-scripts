@@ -13,10 +13,10 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
     {
         [SerializeField]
         public List<TypeConfigEntry> typeConfigs = new List<TypeConfigEntry>();
-        
+
         [SerializeField]
         public List<NameHighlightEntry> nameHighlightConfigs = new List<NameHighlightEntry>();
-        
+
         [SerializeField]
         public List<PropertyHighlightEntry> propertyHighlightConfigs = new List<PropertyHighlightEntry>();
     }

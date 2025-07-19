@@ -10,20 +10,20 @@ namespace FlammAlpha.UnityTools
     public static class UnityToolsMenu
     {
         private const string MENU_ROOT = "Tools/FlammAlpha/";
-        
+
         [MenuItem(MENU_ROOT + "Utilities/Force Refresh All", false, 900)]
         private static void ForceRefreshAll()
         {
             // Force refresh hierarchy coloring
             Hierarchy.Highlight.HierarchyHighlighting.ForceRecache();
-            
+
             // Refresh asset database
             AssetDatabase.Refresh();
-            
+
             // Repaint all windows
             EditorApplication.RepaintHierarchyWindow();
             EditorApplication.RepaintProjectWindow();
-            
+
             Debug.Log("FlammAlpha Unity Tools: Forced refresh of all systems completed.");
         }
 

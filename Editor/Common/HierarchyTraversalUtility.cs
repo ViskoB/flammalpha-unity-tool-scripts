@@ -29,18 +29,18 @@ namespace FlammAlpha.UnityTools.Common
                 Debug.LogWarning($"HierarchyTraversalUtility: Maximum recursion depth ({maxDepth}) reached in HasComponentInHierarchy. Possible circular reference detected.");
                 return false;
             }
-            
+
             if (obj == null) return false;
-            
+
             if (obj.GetComponent(componentType) != null)
                 return true;
-                
+
             foreach (Transform child in obj.transform)
             {
                 if (HasComponentInHierarchyRecursive(child.gameObject, componentType, depth + 1, maxDepth))
                     return true;
             }
-            
+
             return false;
         }
 
@@ -63,18 +63,18 @@ namespace FlammAlpha.UnityTools.Common
                 Debug.LogWarning($"HierarchyTraversalUtility: Maximum recursion depth ({maxDepth}) reached in HasNamePrefixInHierarchy. Possible circular reference detected.");
                 return false;
             }
-            
+
             if (obj == null || string.IsNullOrEmpty(prefix)) return false;
-            
+
             if (obj.name.StartsWith(prefix, StringComparison.Ordinal))
                 return true;
-                
+
             foreach (Transform child in obj.transform)
             {
                 if (HasNamePrefixInHierarchyRecursive(child.gameObject, prefix, depth + 1, maxDepth))
                     return true;
             }
-            
+
             return false;
         }
 
@@ -88,10 +88,10 @@ namespace FlammAlpha.UnityTools.Common
         public static void ForEachInHierarchy(GameObject obj, Action<GameObject, int> action, bool includeRoot = true, int maxDepth = DEFAULT_MAX_DEPTH)
         {
             if (obj == null || action == null) return;
-            
+
             if (includeRoot)
                 action(obj, 0);
-                
+
             ForEachInHierarchyRecursive(obj.transform, action, includeRoot ? 1 : 0, maxDepth);
         }
 
@@ -102,7 +102,7 @@ namespace FlammAlpha.UnityTools.Common
                 Debug.LogWarning($"HierarchyTraversalUtility: Maximum recursion depth ({maxDepth}) reached in ForEachInHierarchy. Possible circular reference detected.");
                 return;
             }
-            
+
             foreach (Transform child in parent)
             {
                 action(child.gameObject, depth);

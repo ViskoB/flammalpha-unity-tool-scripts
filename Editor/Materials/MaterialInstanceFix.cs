@@ -11,12 +11,12 @@ namespace FlammAlpha.UnityTools.Materials
     /// </summary>
     public class MaterialInstanceFix : EditorWindow
     {
-        public enum Mode 
-        { 
-            RevertInstances, 
-            CreateInstances 
+        public enum Mode
+        {
+            RevertInstances,
+            CreateInstances
         }
-        
+
         private Mode mode = Mode.RevertInstances;
         private Object targetRoot;
         private List<InstanceIssue> issues = new List<InstanceIssue>();
@@ -129,7 +129,7 @@ namespace FlammAlpha.UnityTools.Materials
                 issue.selected = EditorGUILayout.Toggle(issue.selected, GUILayout.Width(18));
                 issue.foldout = EditorGUILayout.Foldout(issue.foldout, $"Renderer: {issue.renderer.name} | Slot: {issue.slot}", true);
                 EditorGUILayout.EndHorizontal();
-                
+
                 if (issue.foldout)
                 {
                     using (new EditorGUI.DisabledScope(true))
@@ -137,7 +137,7 @@ namespace FlammAlpha.UnityTools.Materials
                         EditorGUILayout.ObjectField("Renderer", issue.renderer, typeof(Renderer), true);
                         EditorGUILayout.LabelField($"Slot: {issue.slot}");
                     }
-                    
+
                     if (mode == Mode.RevertInstances)
                     {
                         EditorGUILayout.ObjectField("Instance Material", issue.instance, typeof(Material), false);
@@ -215,7 +215,7 @@ namespace FlammAlpha.UnityTools.Materials
             issues.Clear();
             var matGuids = AssetDatabase.FindAssets("t:Material");
             HashSet<Material> assetMaterials = new HashSet<Material>();
-            
+
             foreach (var guid in matGuids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
