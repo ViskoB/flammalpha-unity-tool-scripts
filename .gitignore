@@ -47,11 +47,20 @@ ExportedObj/
 *.opendb
 *.VC.db
 
-# Unity3D generated meta files
-*.meta
+# Unity3D generated meta files for temporary files only
 *.pidb.meta
 *.pdb.meta
 *.mdb.meta
+
+# Specific meta files to ignore (but keep most .meta files!)
+# Only ignore meta files for files that are already ignored
+[Ll]ibrary.meta
+[Tt]emp.meta
+[Oo]bj.meta
+[Bb]uild.meta
+[Bb]uilds.meta
+[Ll]ogs.meta
+[Uu]ser[Ss]ettings.meta
 
 # Unity3D generated file on crash reports
 sysinfo.txt
