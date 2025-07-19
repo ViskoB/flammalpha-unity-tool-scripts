@@ -8,7 +8,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
     /// Configuration asset for hierarchy highlighting settings.
     /// Contains type-based, name-based, and property-based highlighting rules.
     /// </summary>
-    [CreateAssetMenu(fileName = "HierarchyHighlightConfig", menuName = "FlammAlpha/Hierarchy Highlight Config")]
     [Serializable]
     public class HierarchyHighlightConfig : ScriptableObject
     {

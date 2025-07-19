@@ -369,47 +369,5 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             SaveConfig(config);
             return true;
         }
-
-        /// <summary>
-        /// Manually creates the config asset for testing/debugging purposes.
-        /// </summary>
-        [UnityEditor.MenuItem("FlammAlpha/Create Hierarchy Highlight Config")]
-        public static void ManuallyCreateConfig()
-        {
-            Debug.Log("ManuallyCreateConfig: Force creating config asset...");
-
-            // Clear cache to force recreation
-            _cachedConfig = null;
-
-            // Check if existing config exists and warn user
-            if (File.Exists(ConfigAssetPath))
-            {
-                if (!EditorUtility.DisplayDialog("Config Already Exists",
-                    "A hierarchy highlight config already exists. Creating a new one will overwrite your existing configuration.\n\nAre you sure you want to continue?",
-                    "Yes, Overwrite", "Cancel"))
-                {
-                    Debug.Log("ManuallyCreateConfig: User cancelled operation.");
-                    return;
-                }
-
-                AssetDatabase.DeleteAsset(ConfigAssetPath);
-                AssetDatabase.Refresh();
-            }
-
-            var config = CreateAndSaveConfigAsset();
-
-            Debug.Log($"ManuallyCreateConfig: Config asset created at {ConfigAssetPath}");
-
-            // Test loading it back
-            var loadedConfig = Resources.Load<HierarchyHighlightConfig>(ConfigResourcePath);
-            if (loadedConfig != null)
-            {
-                Debug.Log("ManuallyCreateConfig: Successfully loaded config from Resources!");
-            }
-            else
-            {
-                Debug.LogError("ManuallyCreateConfig: Failed to load config from Resources!");
-            }
-        }
     }
 }
