@@ -49,8 +49,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 
         private static int filteredTypeIndex = -1;
 
-        private enum CountKind { Type, Property }
-
         /// <summary>
         /// Context for managing count caching operations.
         /// </summary>
@@ -279,6 +277,8 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                 EnsureCountsQueued(propertyCountContext, instanceID, obj);
 
             float nextX = selectionRect.xMax;
+            float minNameWidth = 60f; // Minimum width to preserve for the object name
+            float availableWidth = selectionRect.width - selectionRect.height - minNameWidth; // Account for Unity's icon space and minimum name space
 
             List<(int typeIndex, Rect counterRect, bool isProperty)> counterRects = new();
 
@@ -364,84 +364,51 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 
             if (typeCountsActuallyReady && propertyCountsActuallyReady)
             {
-                if (propertyConfigs != null && propertyConfigs.Count > 0)
-                {
-                    for (int i = propertyConfigs.Count - 1; i >= 0; i--)
-                    {
-                        if ((propertyCounts[i] == 0 && propertyCountsOnSelf[i] == 0) || string.IsNullOrWhiteSpace(propertyConfigs[i].symbol)) continue;
-                        string totalCount = propertyCounts[i] == propertyCountsOnSelf[i] ? "" : $"{propertyCounts[i]}";
-                        string selfCount = propertyCountsOnSelf[i] > 0 ? $" ({propertyCountsOnSelf[i]})" : "";
-                        string label = $"{propertyConfigs[i].symbol} {totalCount}{selfCount}".Trim();
-                        float labelWidth = Mathf.Max(EditorStyles.label.CalcSize(new GUIContent(label)).x + 6, 32);
-                        nextX -= labelWidth + 2f;
-                        Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
+                // Collect all visible counters
+                var allCounters = CollectCounters(
+                    typeConfigs,
+                    propertyConfigs,
+                    counts,
+                    countsOnSelf,
+                    propertyCounts,
+                    propertyCountsOnSelf);
 
-                        int filterIdx = i + (typeConfigs?.Count ?? 0);
-                        counterRects.Add((filterIdx, countRect, true));
-                        EditorGUI.DrawRect(countRect, propertyConfigs[i].color);
+                var drawContext = new CounterDrawContext(
+                    nextX,
+                    0f,
+                    availableWidth,
+                    selectionRect,
+                    counterRects,
+                    countStyle);
 
-                        if (filteredTypeIndex == filterIdx)
-                        {
-                            Handles.color = Color.yellow;
-                            Handles.DrawAAPolyLine(3,
-                                new Vector3(countRect.x, countRect.y),
-                                new Vector3(countRect.xMax, countRect.y),
-                                new Vector3(countRect.xMax, countRect.yMax),
-                                new Vector3(countRect.x, countRect.yMax),
-                                new Vector3(countRect.x, countRect.y)
-                            );
-                        }
+                // Draw counters with smart space management
+                DrawCountersWithMoreButton(allCounters, ref drawContext);
 
-                        EditorGUI.LabelField(countRect, new GUIContent(label,
-                            $"{propertyConfigs[i].componentTypeName}.{propertyConfigs[i].propertyName}"), countStyle);
-                    }
-                }
-                if (typeConfigs != null && typeConfigs.Count > 0)
-                {
-                    for (int i = typeConfigs.Count - 1; i >= 0; i--)
-                    {
-                        if ((counts[i] == 0 && countsOnSelf[i] == 0) || string.IsNullOrWhiteSpace(typeConfigs[i].symbol)) continue;
-                        string totalCount = counts[i] == countsOnSelf[i] ? "" : $"{counts[i]}";
-                        string selfCount = countsOnSelf[i] > 0 ? $" ({countsOnSelf[i]})" : "";
-                        string label = $"{typeConfigs[i].symbol} {totalCount}{selfCount}".Trim();
-                        float labelWidth = Mathf.Max(EditorStyles.label.CalcSize(new GUIContent(label)).x + 6, 32);
-                        nextX -= labelWidth + 2f;
-                        Rect countRect = new Rect(nextX, selectionRect.y, labelWidth, selectionRect.height);
-
-                        counterRects.Add((i, countRect, false));
-                        EditorGUI.DrawRect(countRect, typeConfigs[i].color);
-                        if (filteredTypeIndex == i)
-                        {
-                            Handles.color = Color.yellow;
-                            Handles.DrawAAPolyLine(3,
-                                new Vector3(countRect.x, countRect.y),
-                                new Vector3(countRect.xMax, countRect.y),
-                                new Vector3(countRect.xMax, countRect.yMax),
-                                new Vector3(countRect.x, countRect.yMax),
-                                new Vector3(countRect.x, countRect.y)
-                            );
-                        }
-
-                        EditorGUI.LabelField(countRect, new GUIContent(label, typeConfigs[i].typeName), countStyle);
-                    }
-                }
+                // Update nextX from the context after drawing all counters
+                nextX = drawContext.NextX;
             }
             else
             {
                 float spinnerW = 20;
                 float padX = 2;
-                nextX -= spinnerW + padX;
-                Rect loadingRect = new(nextX, selectionRect.y, spinnerW, selectionRect.height);
-                int tick = (int)(EditorApplication.timeSinceStartup * 8) % spinner.Length;
-                string anim = spinner[tick];
-                EditorGUI.DrawRect(loadingRect, new Color(0.5f, 0.5f, 0.5f, 0.12f));
-                GUIStyle spinnerStyle = new(EditorStyles.label)
+                float totalSpinnerWidth = spinnerW + padX;
+
+                // Only show spinner if we have enough space
+                if (totalSpinnerWidth <= availableWidth)
                 {
-                    alignment = TextAnchor.MiddleCenter,
-                    fontSize = 16,
-                    normal = { textColor = Color.gray }
-                };
-                EditorGUI.LabelField(loadingRect, anim, spinnerStyle);
+                    nextX -= totalSpinnerWidth;
+                    Rect loadingRect = new(nextX, selectionRect.y, spinnerW, selectionRect.height);
+                    int tick = (int)(EditorApplication.timeSinceStartup * 8) % spinner.Length;
+                    string anim = spinner[tick];
+                    EditorGUI.DrawRect(loadingRect, new Color(0.5f, 0.5f, 0.5f, 0.12f));
+                    GUIStyle spinnerStyle = new(EditorStyles.label)
+                    {
+                        alignment = TextAnchor.MiddleCenter,
+                        fontSize = 16,
+                        normal = { textColor = Color.gray }
+                    };
+                    EditorGUI.LabelField(loadingRect, anim, spinnerStyle);
+                }
             }
 
             if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
@@ -474,13 +441,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             {
                 Color overlay = new Color(0f, 0f, 0f, 0.18f);
                 EditorGUI.DrawRect(selectionRect, overlay);
-            }
-
-            Texture texture = !obj.activeSelf ? AssetPreview.GetMiniThumbnail(obj) : null;
-            if (texture != null)
-            {
-                Rect iconRect = new Rect(selectionRect.x, selectionRect.y, selectionRect.height, selectionRect.height);
-                GUI.DrawTexture(iconRect, texture, ScaleMode.ScaleToFit, true);
             }
         }
 
@@ -559,6 +519,259 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         {
             lock (hs) { return hs.Add(id); }
         }
+
+        /// <summary>
+        /// Represents a single counter to be displayed.
+        /// </summary>
+        private struct CounterInfo
+        {
+            public readonly string Symbol;
+            public readonly int TotalCount;
+            public readonly int SelfCount;
+            public readonly Color BackgroundColor;
+            public readonly string TooltipText;
+            public readonly int FilterIndex;
+            public readonly bool IsProperty;
+            public readonly string Label;
+            public readonly float Width;
+
+            public CounterInfo(string symbol, int totalCount, int selfCount, Color backgroundColor,
+                string tooltipText, int filterIndex, bool isProperty)
+            {
+                Symbol = symbol;
+                TotalCount = totalCount;
+                SelfCount = selfCount;
+                BackgroundColor = backgroundColor;
+                TooltipText = tooltipText;
+                FilterIndex = filterIndex;
+                IsProperty = isProperty;
+
+                string totalCountStr = totalCount == selfCount ? "" : $"{totalCount}";
+                string selfCountStr = selfCount > 0 ? $" ({selfCount})" : "";
+                Label = $"{symbol} {totalCountStr}{selfCountStr}".Trim();
+                Width = Mathf.Max(EditorStyles.label.CalcSize(new GUIContent(Label)).x + 6, 32) + 2f;
+            }
+
+            public bool IsVisible => (TotalCount > 0 || SelfCount > 0) && !string.IsNullOrWhiteSpace(Symbol);
+        }
+
+        /// <summary>
+        /// Context for drawing counters, containing all the state needed for counter rendering.
+        /// </summary>
+        private struct CounterDrawContext
+        {
+            public float NextX;
+            public float UsedWidth;
+            public readonly float AvailableWidth;
+            public readonly Rect SelectionRect;
+            public readonly List<(int typeIndex, Rect counterRect, bool isProperty)> CounterRects;
+            public readonly GUIStyle CountStyle;
+
+            public CounterDrawContext(
+                float nextX,
+                float usedWidth,
+                float availableWidth,
+                Rect selectionRect,
+                List<(int typeIndex, Rect counterRect, bool isProperty)> counterRects,
+                GUIStyle countStyle)
+            {
+                NextX = nextX;
+                UsedWidth = usedWidth;
+                AvailableWidth = availableWidth;
+                SelectionRect = selectionRect;
+                CounterRects = counterRects;
+                CountStyle = countStyle;
+            }
+        }
+
+        /// <summary>
+        /// Collects all visible counters for a GameObject.
+        /// </summary>
+        private static List<CounterInfo> CollectCounters(
+            List<TypeConfigEntry> typeConfigs,
+            List<PropertyHighlightEntry> propertyConfigs,
+            int[] counts,
+            int[] countsOnSelf,
+            int[] propertyCounts,
+            int[] propertyCountsOnSelf)
+        {
+            var counters = new List<CounterInfo>();
+
+            // Add property counters (in reverse order for display)
+            if (propertyConfigs != null && propertyConfigs.Count > 0)
+            {
+                for (int i = propertyConfigs.Count - 1; i >= 0; i--)
+                {
+                    int filterIdx = i + (typeConfigs?.Count ?? 0);
+                    string tooltipText = $"{propertyConfigs[i].componentTypeName}.{propertyConfigs[i].propertyName}";
+
+                    var counter = new CounterInfo(
+                        propertyConfigs[i].symbol,
+                        propertyCounts[i],
+                        propertyCountsOnSelf[i],
+                        propertyConfigs[i].color,
+                        tooltipText,
+                        filterIdx,
+                        true);
+
+                    if (counter.IsVisible)
+                        counters.Add(counter);
+                }
+            }
+
+            // Add type counters (in reverse order for display)
+            if (typeConfigs != null && typeConfigs.Count > 0)
+            {
+                for (int i = typeConfigs.Count - 1; i >= 0; i--)
+                {
+                    var counter = new CounterInfo(
+                        typeConfigs[i].symbol,
+                        counts[i],
+                        countsOnSelf[i],
+                        typeConfigs[i].color,
+                        typeConfigs[i].typeName,
+                        i,
+                        false);
+
+                    if (counter.IsVisible)
+                        counters.Add(counter);
+                }
+            }
+
+            return counters;
+        }
+
+        /// <summary>
+        /// Draws counters with smart space management and a "more" button for hidden counters.
+        /// </summary>
+        private static void DrawCountersWithMoreButton(
+            List<CounterInfo> allCounters,
+            ref CounterDrawContext context)
+        {
+            const float moreButtonWidth = 28f;
+            const float moreButtonPadding = 2f;
+            const float totalMoreButtonWidth = moreButtonWidth + moreButtonPadding;
+
+            // First pass: see if all counters fit without reserving space for "more" button
+            var visibleCounters = new List<CounterInfo>();
+            var hiddenCounters = new List<CounterInfo>();
+            float currentWidth = 0f;
+
+            foreach (var counter in allCounters)
+            {
+                if (currentWidth + counter.Width <= context.AvailableWidth)
+                {
+                    visibleCounters.Add(counter);
+                    currentWidth += counter.Width;
+                }
+                else
+                {
+                    hiddenCounters.Add(counter);
+                }
+            }
+
+            // If some counters don't fit, we need to reserve space for the "more" button
+            // and recalculate which counters can be shown
+            if (hiddenCounters.Count > 0)
+            {
+                float availableForCounters = context.AvailableWidth - totalMoreButtonWidth;
+                visibleCounters.Clear();
+                hiddenCounters.Clear();
+                currentWidth = 0f;
+
+                foreach (var counter in allCounters)
+                {
+                    if (currentWidth + counter.Width <= availableForCounters)
+                    {
+                        visibleCounters.Add(counter);
+                        currentWidth += counter.Width;
+                    }
+                    else
+                    {
+                        hiddenCounters.Add(counter);
+                    }
+                }
+            }
+
+            // Draw visible counters
+            foreach (var counter in visibleCounters)
+            {
+                DrawSingleCounter(counter, ref context);
+            }
+
+            // Draw "more" button only if there are hidden counters
+            if (hiddenCounters.Count > 0)
+            {
+                DrawMoreButton(hiddenCounters, totalMoreButtonWidth, ref context);
+            }
+        }
+
+        /// <summary>
+        /// Draws a single counter.
+        /// </summary>
+        private static void DrawSingleCounter(CounterInfo counter, ref CounterDrawContext context)
+        {
+            context.UsedWidth += counter.Width;
+            context.NextX -= counter.Width;
+
+            float labelWidth = counter.Width - 2f; // Remove padding
+            Rect countRect = new Rect(context.NextX, context.SelectionRect.y, labelWidth, context.SelectionRect.height);
+
+            context.CounterRects.Add((counter.FilterIndex, countRect, counter.IsProperty));
+            EditorGUI.DrawRect(countRect, counter.BackgroundColor);
+
+            if (filteredTypeIndex == counter.FilterIndex)
+            {
+                Handles.color = Color.yellow;
+                Handles.DrawAAPolyLine(3,
+                    new Vector3(countRect.x, countRect.y),
+                    new Vector3(countRect.xMax, countRect.y),
+                    new Vector3(countRect.xMax, countRect.yMax),
+                    new Vector3(countRect.x, countRect.yMax),
+                    new Vector3(countRect.x, countRect.y)
+                );
+            }
+
+            EditorGUI.LabelField(countRect, new GUIContent(counter.Label, counter.TooltipText), context.CountStyle);
+        }
+
+        /// <summary>
+        /// Draws the "more" button with tooltip listing hidden counters.
+        /// </summary>
+        private static void DrawMoreButton(List<CounterInfo> hiddenCounters, float totalWidth, ref CounterDrawContext context)
+        {
+            context.NextX -= totalWidth;
+            Rect moreRect = new Rect(context.NextX, context.SelectionRect.y, totalWidth - 2f, context.SelectionRect.height);
+
+            Color moreColor = EditorGUIUtility.isProSkin
+                ? new Color(0.6f, 0.6f, 0.6f, 0.8f)
+                : new Color(0.4f, 0.4f, 0.4f, 0.8f);
+            EditorGUI.DrawRect(moreRect, moreColor);
+
+            GUIStyle moreStyle = new(EditorStyles.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 10,
+                fontStyle = FontStyle.Bold,
+                normal = { textColor = Color.white }
+            };
+
+            // Create tooltip text
+            string tooltipText;
+            if (hiddenCounters.Count > 0)
+            {
+                var hiddenLabels = hiddenCounters.Select(c => $"• {c.Label} ({c.TooltipText})");
+                tooltipText = $"Hidden counters:\n{string.Join("\n", hiddenLabels)}\n\nExpand window to see more counters";
+            }
+            else
+            {
+                tooltipText = "All counters are visible";
+            }
+
+            string displayText = hiddenCounters.Count > 0 ? $"+{hiddenCounters.Count}" : "•••";
+            EditorGUI.LabelField(moreRect, new GUIContent(displayText, tooltipText), moreStyle);
+        }
+
         private static bool HasComponentInHierarchy(GameObject obj, Type componentType, int depth = 0)
         {
             return HierarchyTraversalUtility.HasComponentInHierarchy(obj, componentType, MaxDepth);
@@ -568,8 +781,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         {
             return HierarchyTraversalUtility.HasNamePrefixInHierarchy(obj, prefix, MaxDepth);
         }
-
-        private delegate object ValueExtractor(object component, Type type, string propertyName);
 
         private static object GetComponentValue(object comp, Type t, string propertyName)
         {
