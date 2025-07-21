@@ -247,7 +247,6 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             var typeConfigs = GetTypeConfigs();
             var nameHighlightConfigs = GetNameHighlightConfigs();
             var propertyConfigs = GetPropertyHighlightConfigs();
-            if (typeConfigs == null && propertyConfigs == null) return;
             GameObject obj = EditorUtility.InstanceIDToObject(instanceID) as GameObject;
             if (obj == null) return;
 
@@ -261,8 +260,22 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
             bool propertyCountsReady = propertyCountContext.RecursiveCache.TryGetValue(instanceID, out propertyCounts);
             bool propertyCountsSelfReady = propertyCountContext.SelfCache.TryGetValue(instanceID, out propertyCountsOnSelf);
 
-            EnsureCountsQueued(typeCountContext, instanceID, obj);
-            if (propertyConfigs != null)
+            // Initialize empty arrays for empty configs to prevent null reference exceptions
+            if (typeConfigs == null || typeConfigs.Count == 0)
+            {
+                counts = new int[0];
+                countsOnSelf = new int[0];
+            }
+            if (propertyConfigs == null || propertyConfigs.Count == 0)
+            {
+                propertyCounts = new int[0];
+                propertyCountsOnSelf = new int[0];
+            }
+
+            // Only queue for processing if we actually have configs to process
+            if (typeConfigs != null && typeConfigs.Count > 0)
+                EnsureCountsQueued(typeCountContext, instanceID, obj);
+            if (propertyConfigs != null && propertyConfigs.Count > 0)
                 EnsureCountsQueued(propertyCountContext, instanceID, obj);
 
             float nextX = selectionRect.xMax;
@@ -345,10 +358,13 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                 normal = { textColor = Color.white }
             };
 
-            if ((countsReady && countsSelfReady) &&
-                (propertyConfigs == null || (propertyCountsReady && propertyCountsSelfReady)))
+            // Determine if counts are ready - if there are no configs, consider them ready
+            bool typeCountsActuallyReady = (typeConfigs == null || typeConfigs.Count == 0) || (countsReady && countsSelfReady);
+            bool propertyCountsActuallyReady = (propertyConfigs == null || propertyConfigs.Count == 0) || (propertyCountsReady && propertyCountsSelfReady);
+
+            if (typeCountsActuallyReady && propertyCountsActuallyReady)
             {
-                if (propertyConfigs != null)
+                if (propertyConfigs != null && propertyConfigs.Count > 0)
                 {
                     for (int i = propertyConfigs.Count - 1; i >= 0; i--)
                     {
@@ -380,7 +396,7 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                             $"{propertyConfigs[i].componentTypeName}.{propertyConfigs[i].propertyName}"), countStyle);
                     }
                 }
-                if (typeConfigs != null)
+                if (typeConfigs != null && typeConfigs.Count > 0)
                 {
                     for (int i = typeConfigs.Count - 1; i >= 0; i--)
                     {
