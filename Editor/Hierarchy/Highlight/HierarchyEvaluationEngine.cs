@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using FlammAlpha.UnityTools.Common;
+using FlammAlpha.UnityTools.Data;
 
 namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {

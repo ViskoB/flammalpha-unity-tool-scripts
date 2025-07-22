@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using System.Collections.Concurrent;
 using FlammAlpha.UnityTools.Common;
+using FlammAlpha.UnityTools.Data;
 
 namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 {
