@@ -151,7 +151,82 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
 
             try
             {
-                AssetDatabase.CopyAsset(ConfigAssetPath, backupPath);
+                // Load the current config
+                var currentConfig = AssetDatabase.LoadAssetAtPath<HierarchyHighlightConfig>(ConfigAssetPath);
+                if (currentConfig == null)
+                {
+                    Debug.LogError("CreateConfigBackup: Could not load current config for backup");
+                    return null;
+                }
+
+                // Create a proper clone with script references intact
+                var backupConfig = ScriptableObject.CreateInstance<HierarchyHighlightConfig>();
+
+                // Copy all data from current config to backup config
+                backupConfig.configVersion = currentConfig.configVersion;
+
+                // Deep copy type configs
+                if (currentConfig.typeConfigs != null)
+                {
+                    backupConfig.typeConfigs = new List<TypeConfigEntry>();
+                    foreach (var entry in currentConfig.typeConfigs)
+                    {
+                        if (entry != null)
+                        {
+                            backupConfig.typeConfigs.Add(new TypeConfigEntry
+                            {
+                                typeName = entry.typeName,
+                                symbol = entry.symbol,
+                                color = entry.color,
+                                propagateUpwards = entry.propagateUpwards,
+                                enabled = entry.enabled
+                            });
+                        }
+                    }
+                }
+
+                // Deep copy name highlight configs
+                if (currentConfig.nameHighlightConfigs != null)
+                {
+                    backupConfig.nameHighlightConfigs = new List<NameHighlightEntry>();
+                    foreach (var entry in currentConfig.nameHighlightConfigs)
+                    {
+                        if (entry != null)
+                        {
+                            backupConfig.nameHighlightConfigs.Add(new NameHighlightEntry
+                            {
+                                prefix = entry.prefix,
+                                color = entry.color,
+                                propagateUpwards = entry.propagateUpwards,
+                                enabled = entry.enabled
+                            });
+                        }
+                    }
+                }
+
+                // Deep copy property highlight configs
+                if (currentConfig.propertyHighlightConfigs != null)
+                {
+                    backupConfig.propertyHighlightConfigs = new List<PropertyHighlightEntry>();
+                    foreach (var entry in currentConfig.propertyHighlightConfigs)
+                    {
+                        if (entry != null)
+                        {
+                            backupConfig.propertyHighlightConfigs.Add(new PropertyHighlightEntry
+                            {
+                                componentTypeName = entry.componentTypeName,
+                                propertyName = entry.propertyName,
+                                symbol = entry.symbol,
+                                color = entry.color,
+                                propagateUpwards = entry.propagateUpwards,
+                                enabled = entry.enabled
+                            });
+                        }
+                    }
+                }
+
+                // Create the backup asset with proper script references
+                AssetDatabase.CreateAsset(backupConfig, backupPath);
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
 
@@ -473,6 +548,16 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         }
 
         /// <summary>
+        /// Clears the cached config and forces the next access to reload from disk.
+        /// This is useful after restore operations or external config modifications.
+        /// </summary>
+        public static void ClearCache()
+        {
+            _cachedConfig = null;
+            Debug.Log("HierarchyHighlightConfigUtility: Cache cleared, next access will reload from disk");
+        }
+
+        /// <summary>
         /// Checks if the given config needs migration to the current version.
         /// </summary>
         private static bool NeedsMigration(HierarchyHighlightConfig config)
@@ -489,8 +574,8 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                 }
 
                 // Check if all expected lists are present and initialized
-                if (config.typeConfigs == null || 
-                    config.nameHighlightConfigs == null || 
+                if (config.typeConfigs == null ||
+                    config.nameHighlightConfigs == null ||
                     config.propertyHighlightConfigs == null)
                 {
                     Debug.Log("NeedsMigration: Config missing required lists, migration needed.");
@@ -566,10 +651,10 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
         {
             Debug.Log("CreateDefaultConfigAsset: Creating a new HierarchyHighlightConfig asset.");
             var newConfig = ScriptableObject.CreateInstance<HierarchyHighlightConfig>();
-            
+
             // Set the current version
             newConfig.configVersion = CurrentConfigVersion;
-            
+
             newConfig.typeConfigs = new List<TypeConfigEntry>
             {
                 new TypeConfigEntry
@@ -754,22 +839,93 @@ namespace FlammAlpha.UnityTools.Hierarchy.Highlight
                     return false;
                 }
 
-                // Delete current config
-                if (File.Exists(ConfigAssetPath))
+                // Load or create the current config asset
+                var currentConfig = AssetDatabase.LoadAssetAtPath<HierarchyHighlightConfig>(ConfigAssetPath);
+                if (currentConfig == null)
                 {
-                    AssetDatabase.DeleteAsset(ConfigAssetPath);
+                    // Create new config asset if it doesn't exist
+                    currentConfig = ScriptableObject.CreateInstance<HierarchyHighlightConfig>();
+                    EnsureResourcesDirectoryExists();
+                    AssetDatabase.CreateAsset(currentConfig, ConfigAssetPath);
                 }
 
-                // Copy the backup to the main config location
-                AssetDatabase.CopyAsset(backupPath, ConfigAssetPath);
+                // Copy all data from backup to current config
+                currentConfig.configVersion = backupConfig.configVersion;
+
+                // Deep copy type configs
+                currentConfig.typeConfigs = new List<TypeConfigEntry>();
+                if (backupConfig.typeConfigs != null)
+                {
+                    foreach (var entry in backupConfig.typeConfigs)
+                    {
+                        if (entry != null)
+                        {
+                            currentConfig.typeConfigs.Add(new TypeConfigEntry
+                            {
+                                typeName = entry.typeName,
+                                symbol = entry.symbol,
+                                color = entry.color,
+                                propagateUpwards = entry.propagateUpwards,
+                                enabled = entry.enabled
+                            });
+                        }
+                    }
+                }
+
+                // Deep copy name highlight configs
+                currentConfig.nameHighlightConfigs = new List<NameHighlightEntry>();
+                if (backupConfig.nameHighlightConfigs != null)
+                {
+                    foreach (var entry in backupConfig.nameHighlightConfigs)
+                    {
+                        if (entry != null)
+                        {
+                            currentConfig.nameHighlightConfigs.Add(new NameHighlightEntry
+                            {
+                                prefix = entry.prefix,
+                                color = entry.color,
+                                propagateUpwards = entry.propagateUpwards,
+                                enabled = entry.enabled
+                            });
+                        }
+                    }
+                }
+
+                // Deep copy property highlight configs
+                currentConfig.propertyHighlightConfigs = new List<PropertyHighlightEntry>();
+                if (backupConfig.propertyHighlightConfigs != null)
+                {
+                    foreach (var entry in backupConfig.propertyHighlightConfigs)
+                    {
+                        if (entry != null)
+                        {
+                            currentConfig.propertyHighlightConfigs.Add(new PropertyHighlightEntry
+                            {
+                                componentTypeName = entry.componentTypeName,
+                                propertyName = entry.propertyName,
+                                symbol = entry.symbol,
+                                color = entry.color,
+                                propagateUpwards = entry.propagateUpwards,
+                                enabled = entry.enabled
+                            });
+                        }
+                    }
+                }
+
+                // Mark the asset as dirty and save
+                EditorUtility.SetDirty(currentConfig);
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
 
-                // Clear cache and reload
-                _cachedConfig = null;
-                ForceLoadConfig();
+                // Clear cache and update with the restored config
+                _cachedConfig = currentConfig;
+                OnConfigUpdate?.Invoke(currentConfig);
 
                 Debug.Log($"RestoreFromBackup: Successfully restored config from {backupPath}");
+                Debug.Log($"RestoreFromBackup: Restored {currentConfig.typeConfigs?.Count ?? 0} type rules, " +
+                         $"{currentConfig.nameHighlightConfigs?.Count ?? 0} name rules, " +
+                         $"{currentConfig.propertyHighlightConfigs?.Count ?? 0} property rules");
+
                 return true;
             }
             catch (System.Exception ex)
