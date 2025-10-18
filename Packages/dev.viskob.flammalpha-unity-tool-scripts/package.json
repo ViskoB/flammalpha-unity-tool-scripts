@@ -1,0 +1,20 @@
+{
+  "name": "dev.viskob.flammalpha-unity-tool-scripts",
+  "displayName": "FlammAlpha Unity Tool Scripts",
+  "version": "1.0.0",
+  "unity": "2022.3",
+  "description": "Utilities for VRChat avatar creation (Editor tools & helpers)",
+  "vrchatVersion": "2022.1.1",
+  "author": {
+    "name": "FlammAlpha",
+    "url": "https://github.com/flammalpha"
+  },
+  "vpmDependencies": {
+  },
+  "legacyFolders": {
+  },
+  "url": "https://github.com/ViskoB/flammalpha-unity-tool-scripts",
+  "documentationUrl": "https://github.com/ViskoB/flammalpha-unity-tool-scripts",
+  "changelogUrl": "https://github.com/ViskoB/flammalpha-unity-tool-scripts",
+  "license": "MIT"
+}
